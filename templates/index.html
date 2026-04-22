@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RiskPilot - 风控策略分析师AI助手</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <!-- 引入图表库 -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <div class="logo-icon">🛡️</div>
+          <span>RiskPilot</span>
+        </div>
+      </div>
+      
+      <div class="user-info">
+        <div class="user-role">风控策略分析师</div>
+        <div class="user-name">我的AI分身</div>
+      </div>
+      
+      <nav class="nav-menu">
+        <button class="nav-item active" data-page="analysis">
+          <span class="nav-icon">📊</span>
+          <span>召唤AI做策略分析</span>
+        </button>
+        <button class="nav-item" data-page="records">
+          <span class="nav-icon">📝</span>
+          <span>策略调整记录</span>
+        </button>
+        <button class="nav-item" data-page="reviews">
+          <span class="nav-icon">🔍</span>
+          <span>策略复盘</span>
+        </button>
+        <button class="nav-item" data-page="knowledge">
+          <span class="nav-icon">📚</span>
+          <span>风控知识库</span>
+        </button>
+      </nav>
+      
+      <div class="sidebar-footer">
+        AI创新赛参赛作品
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      
+      <!-- ========== 策略分析页面 ========== -->
+      <section id="page-analysis" class="page-section active">
+        <div class="page-header">
+          <h1 class="page-title">召唤AI做策略分析</h1>
+          <p class="page-desc">上传数据文件，AI自动完成模型评估、分箱分析并生成策略建议</p>
+        </div>
+
+        <!-- 业务标准卡片 -->
+        <div class="stats-row" id="biz-standards-row">
+          <div class="stat-card" style="background:linear-gradient(135deg,#eff6ff,#dbeafe);">
+            <div class="stat-icon" style="background:#bfdbfe;">📊</div>
+            <div class="stat-info">
+              <div class="stat-value" id="std-total-analysis">0</div>
+              <div class="stat-label">累计分析次数</div>
+            </div>
+          </div>
+          <div class="stat-card" style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);">
+            <div class="stat-icon" style="background:#bbf7d0;">⚙️</div>
+            <div class="stat-info">
+              <div class="stat-value" id="std-strategy-adjust">0</div>
+              <div class="stat-label">策略调整记录数</div>
+            </div>
+          </div>
+          <div class="stat-card" style="background:linear-gradient(135deg,#fefce8,#fef9c3);">
+            <div class="stat-icon" style="background:#fde68a;">✅</div>
+            <div class="stat-info">
+              <div class="stat-value" id="std-review-done">0</div>
+              <div class="stat-label">已完成复盘数</div>
+            </div>
+          </div>
+          <div class="stat-card" style="background:linear-gradient(135deg,#fef2f2,#fecaca);">
+            <div class="stat-icon" style="background:#fca5a5;">⏳</div>
+            <div class="stat-info">
+              <div class="stat-value" id="std-review-pending">0</div>
+              <div class="stat-label">待复盘策略数</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 上传区域 -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">📁 数据上传</h3>
+          </div>
+          <div class="card-body">
+            <div id="upload-area" class="upload-area">
+              <div class="upload-icon">📤</div>
+              <div class="upload-text">点击或拖拽上传数据文件</div>
+              <div class="upload-hint">支持 CSV、Excel (.xlsx/.xls) 格式</div>
+              <input type="file" id="file-input" class="hidden" accept=".csv,.xlsx,.xls">
+            </div>
+            
+            <div id="file-info" class="hidden">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <div>
+                  <strong>文件名：</strong><span id="info-filename"></span>
+                  <span style="margin-left:20px;color:#6b7280;">
+                    <span id="info-rows"></span> 行 × <span id="info-cols"></span> 列
+                  </span>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="btn-change-file">更换文件</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分析配置 -->
+        <div class="card">
+          <div class="card-header">
+            <h3 class="card-title">⚙️ 分析配置</h3>
+          </div>
+          <div class="card-body">
+            
+            <!-- 基础参数区 -->
+            <div class="config-section" style="background:#eff6ff;border-color:#bfdbfe;">
+              <div class="config-section-title">📋 基础参数</div>
+              <div class="config-row">
+                <div class="form-group">
+                  <label class="form-label">目标列（逾期标签）</label>
+                  <select id="target-col" class="form-select">
+                    <option value="">请先上传文件</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">分箱数量</label>
+                  <select id="n-bins" class="form-select">
+                    <option value="5">5 箱</option>
+                    <option value="10" selected>10 箱</option>
+                    <option value="15">15 箱</option>
+                    <option value="20">20 箱</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- 业务场景区 -->
+            <div class="config-section" style="background:#f0fdf4;border-color:#bbf7d0;">
+              <div class="config-section-title">🎯 业务场景</div>
+              <div class="config-row config-row-3">
+                <div class="form-group">
+                  <label class="form-label">客群类型</label>
+                  <select id="biz-scenario" class="form-select">
+                    <option value="">全部客群</option>
+                    <option value="first_loan">首贷（New Customer）</option>
+                    <option value="repeat_loan">复贷（Repeat Customer）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">国家/市场</label>
+                  <select id="biz-country" class="form-select">
+                    <option value="">全部市场</option>
+                    <option value="india">🇮🇳 印度 India</option>
+                    <option value="indonesia">🇮🇩 印尼 Indonesia</option>
+                    <option value="philippines">🇵🇭 菲律宾 Philippines</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">分析模块</label>
+                  <select id="biz-module" class="form-select">
+                    <option value="">全部模块</option>
+                    <option value="model">🤖 模型分析</option>
+                    <option value="rule">📋 规则分析</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- 分析类型区 -->
+            <div class="config-section" style="background:#fefce8;border-color:#fde68a;">
+              <div class="config-section-title">📊 分析类型 <span class="config-hint">（多选，可手动输入）</span></div>
+              <div class="analysis-tags-container" id="analysis-tags-container">
+                <label class="tag-checkbox" title="综合评估KS/AUC/IV等模型指标">
+                  <input type="checkbox" name="analysis_tag" value="model_score_eval">
+                  <span>模型分数总和评估(IV+KS+AUC)</span>
+                </label>
+                <label class="tag-checkbox" title="分析各特征的信息价值">
+                  <input type="checkbox" name="analysis_tag" value="feature_iv">
+                  <span>特征IV分析</span>
+                </label>
+                <label class="tag-checkbox" title="分析逾期率与Lift提升度">
+                  <input type="checkbox" name="analysis_tag" value="overdue_lift">
+                  <span>逾期率/Lift分析</span>
+                </label>
+                <label class="tag-checkbox" title="评估模型分数分布稳定性">
+                  <input type="checkbox" name="analysis_tag" value="psi_stability">
+                  <span>PSI稳定性分析</span>
+                </label>
+                <label class="tag-checkbox" title="分析各策略层的风险分布">
+                  <input type="checkbox" name="analysis_tag" value="strategy_layer">
+                  <span>策略分层效果分析</span>
+                </label>
+                <div id="custom-tags-area"></div>
+                <div class="tag-input-wrapper">
+                  <input type="text" id="custom-tag-input" class="tag-input" placeholder="+ 自定义类型" maxlength="20">
+                </div>
+              </div>
+            </div>
+
+            <!-- 数据筛选区 -->
+            <div class="config-section" style="background:#faf5ff;border-color:#e9d5ff;">
+              <div class="config-section-title">🔍 数据筛选</div>
+              <div class="config-row config-row-2">
+                
+                <!-- 渠道组筛选 -->
+                <div class="form-group" id="channel-group">
+                  <label class="form-label">渠道组筛选 <span class="config-hint">（先选字段，再选渠道）</span></label>
+                  <select id="channel-col-select" class="form-select" style="margin-bottom:8px;" onchange="onChannelColChange()">
+                    <option value="">-- 先选择渠道字段 --</option>
+                  </select>
+                  <div id="channel-multiselect" class="feature-multiselect-container" style="max-height:100px;overflow-y:auto;">
+                    <div style="color:#9ca3af;font-size:0.85rem;padding:8px 0;">请先上传文件，再选择渠道字段</div>
+                  </div>
+                  <div id="channel-selected-count" class="selected-count-hint"></div>
+                </div>
+
+                <!-- 分析特征列 -->
+                <div class="form-group" id="feature-cols-group">
+                  <label class="form-label">分析特征列 <span class="config-hint">（支持多选或选全部）</span></label>
+                  <div id="feature-cols-container" class="feature-multiselect-container">
+                    <div style="color:#9ca3af;font-size:0.9rem;padding:10px 0;">请先上传数据文件</div>
+                  </div>
+                  <div id="feature-selected-count" class="selected-count-hint"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 补充说明 -->
+            <div class="config-section">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">📝 补充说明 <span class="config-hint">（选填）</span></label>
+                <textarea id="analysis-note" class="form-textarea" placeholder="记录本次分析的背景、目的等信息（可不填）..."></textarea>
+              </div>
+            </div>
+            
+            <!-- 操作按钮 -->
+            <div class="config-actions">
+              <button class="btn btn-primary" id="btn-run-analysis">
+                <span>🚀</span> 开始分析
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分析结果 -->
+        <div id="analysis-result" class="hidden">
+          <!-- ═══ 模型分析专用报告容器（选择"模型分析"模块时显示）═══ -->
+          <div class="card hidden" id="result-model-report-card">
+            <div class="card-header">
+              <h3 class="card-title">📊 多模型综合分析报告</h3>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <div style="font-size:0.8rem;color:#6b7280;" id="model-report-meta"></div>
+                <button class="btn btn-sm btn-secondary" id="btn-download-report" title="下载报告">📥 下载HTML报告</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0;overflow:hidden;border-radius:0 0 12px 12px;">
+              <iframe id="model-report-frame"
+                style="width:100%;border:none;min-height:800px;background:#f0f4f8;"
+                sandbox="allow-scripts allow-same-origin"></iframe>
+            </div>
+          </div>
+
+          <!-- ═══ 原有分析结果区域（规则分析 / 非模型分析模块使用）═══ -->
+          <div id="result-legacy-container">
+          <!-- 指标卡片 -->
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-label">样本总数</div>
+              <div class="metric-value" id="metric-total">-</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">坏样本数</div>
+              <div class="metric-value" id="metric-bad">-</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">逾期率</div>
+              <div class="metric-value" id="metric-bad-rate">-</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">KS 值</div>
+              <div class="metric-value" id="metric-ks">-</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-label">AUC</div>
+              <div class="metric-value" id="metric-auc">-</div>
+            </div>
+          </div>
+
+          <!-- 分箱详情（单模型模式） -->
+          <div class="card" id="result-bins-card">
+            <div class="card-header">
+              <h3 class="card-title">📊 分箱详情</h3>
+            </div>
+            <div class="card-body">
+              <div class="table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>分箱</th>
+                      <th>分数下限</th>
+                      <th>分数上限</th>
+                      <th>样本数</th>
+                      <th>坏样本数</th>
+                      <th>逾期率</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bins-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 多模型分析报告（全宽 HTML 嵌入） -->
+          <div class="card hidden" id="result-multi-model-card">
+            <div class="card-header">
+              <h3 class="card-title">📊 多模型综合分析报告</h3>
+              <div style="font-size:0.8rem;color:#6b7280;margin-left:12px;" id="multi-model-meta"></div>
+            </div>
+            <div class="card-body" style="padding:0;">
+              <iframe id="multi-model-report-frame"
+                style="width:100%;border:none;min-height:600px;"
+                sandbox="allow-scripts allow-same-origin"></iframe>
+            </div>
+          </div>
+
+          <!-- ========== 模型分箱分析结果区域（新增）========== -->
+          <div class="card hidden" id="result-model-binning-card">
+            <div class="card-header">
+              <h3 class="card-title">🤖 模型分箱分析</h3>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-sm btn-secondary" onclick="switchBinningTab('summary')" id="btn-binning-summary">模型汇总</button>
+                <button class="btn btn-sm btn-secondary" onclick="switchBinningTab('chart')" id="btn-binning-chart">性能图表</button>
+                <button class="btn btn-sm btn-secondary" onclick="switchBinningTab('detail')" id="btn-binning-detail">分箱详情</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <!-- 模型汇总面板 -->
+              <div id="binning-panel-summary" class="chart-panel">
+                <div id="binning-summary-kpi" class="metrics-grid" style="grid-template-columns:repeat(4, 1fr);margin-bottom:20px;">
+                  <!-- KPI由JS填充 -->
+                </div>
+                <h4 style="margin:0 0 12px 0;">🏆 模型排名</h4>
+                <div id="binning-model-table" class="table-container">
+                  <!-- 表格由JS填充 -->
+                </div>
+              </div>
+              <!-- 性能图表面板 -->
+              <div id="binning-panel-chart" class="chart-panel hidden">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+                  <div class="chart-container">
+                    <div class="chart-title">📊 模型 AUC/KS 对比</div>
+                    <img id="img-binning-ranking" style="width:100%;" alt="模型排名">
+                  </div>
+                  <div class="chart-container">
+                    <div class="chart-title">📈 Top 6 逾期率对比</div>
+                    <img id="img-binning-badrate" style="width:100%;" alt="逾期率对比">
+                  </div>
+                </div>
+              </div>
+              <!-- 分箱详情面板 -->
+              <div id="binning-panel-detail" class="chart-panel hidden">
+                <div id="binning-model-tabs" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+                  <!-- 模型选择标签由JS填充 -->
+                </div>
+                <div id="binning-detail-content">
+                  <!-- 分箱详情表格由JS填充 -->
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ========== 模型相关性分析结果区域（新增）========== -->
+          <div class="card hidden" id="result-model-correlation-card">
+            <div class="card-header">
+              <h3 class="card-title">🔗 模型相关性分析</h3>
+              <div style="display:flex;gap:8px;">
+                <button class="btn btn-sm btn-secondary" onclick="switchCorrTab('performance')" id="btn-corr-performance">性能总览</button>
+                <button class="btn btn-sm btn-secondary" onclick="switchCorrTab('correlation')" id="btn-corr-correlation">相关性</button>
+                <button class="btn btn-sm btn-secondary" onclick="switchCorrTab('complement')" id="btn-corr-complement">互补性</button>
+                <button class="btn btn-sm btn-secondary" onclick="switchCorrTab('strategy')" id="btn-corr-strategy">串行策略</button>
+                <button class="btn btn-sm btn-secondary" onclick="switchCorrTab('roc')" id="btn-corr-roc">ROC对比</button>
+              </div>
+            </div>
+            <div class="card-body">
+              <!-- 性能总览面板 -->
+              <div id="corr-panel-performance" class="chart-panel">
+                <div id="corr-summary-kpi" class="metrics-grid" style="grid-template-columns:repeat(3, 1fr);margin-bottom:20px;">
+                </div>
+                <div class="chart-container" style="margin-bottom:20px;">
+                  <div class="chart-title">🎯 模型性能气泡图（气泡大小=覆盖率，颜色=逾期率）</div>
+                  <img id="img-corr-performance" style="width:100%;max-height:380px;object-fit:contain;" alt="模型性能">
+                </div>
+                <h4 style="margin:16px 0 12px 0;">📋 模型性能明细</h4>
+                <div id="corr-performance-table" class="table-container">
+                </div>
+              </div>
+              <!-- 相关性面板 -->
+              <div id="corr-panel-correlation" class="chart-panel hidden">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+                  <div class="chart-container">
+                    <div class="chart-title">🔥 Spearman 相关性热力图</div>
+                    <img id="img-corr-heatmap" style="width:100%;max-height:380px;object-fit:contain;" alt="相关性热力图">
+                  </div>
+                  <div class="chart-container">
+                    <div class="chart-title">🌳 层次聚类树状图</div>
+                    <img id="img-corr-dendrogram" style="width:100%;max-height:380px;object-fit:contain;" alt="聚类树状图">
+                  </div>
+                </div>
+              </div>
+              <!-- 互补性面板 -->
+              <div id="corr-panel-complement" class="chart-panel hidden">
+                <div class="chart-container" style="margin-bottom:20px;">
+                  <div class="chart-title">💪 模型互补性矩阵（捞回潜力）</div>
+                  <img id="img-corr-complement" style="width:100%;max-height:380px;object-fit:contain;" alt="互补性矩阵">
+                </div>
+              </div>
+              <!-- 串行策略面板 -->
+              <div id="corr-panel-strategy" class="chart-panel hidden">
+                <div class="chart-container" style="margin-bottom:20px;">
+                  <div class="chart-title">📊 串行策略效果模拟</div>
+                  <img id="img-corr-strategy" style="width:100%;max-height:380px;object-fit:contain;" alt="串行策略">
+                </div>
+                <h4 style="margin:16px 0 12px 0;">📋 策略模拟明细</h4>
+                <div id="corr-strategy-table" class="table-container">
+                </div>
+              </div>
+              <!-- ROC对比面板 -->
+              <div id="corr-panel-roc" class="chart-panel hidden">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+                  <div class="chart-container">
+                    <div class="chart-title">📈 Top5 ROC 曲线对比</div>
+                    <img id="img-corr-roc" style="width:100%;max-height:380px;object-fit:contain;" alt="ROC曲线">
+                  </div>
+                  <div class="chart-container">
+                    <div class="chart-title">📊 好坏客户分数分布</div>
+                    <img id="img-corr-dist" style="width:100%;max-height:380px;object-fit:contain;" alt="分数分布">
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 操作按钮 -->
+          <div style="display:flex;gap:12px;margin-bottom:20px;">
+            <button class="btn btn-primary" id="btn-export-report">
+              <span>📥</span> 导出分析报告
+            </button>
+            <button class="btn btn-secondary" id="btn-save-record">
+              <span>💾</span> 保存到策略记录
+            </button>
+          </div>
+
+          </div><!-- end #result-legacy-container -->
+
+          <!-- ========== 💡 AI 策略建议（放在最下面，模型分析和规则分析共用）========== -->
+          <div class="card hidden" id="suggestions-card">
+            <div class="card-header">
+              <h3 class="card-title">💡 AI 策略建议</h3>
+            </div>
+            <div class="card-body">
+              <div id="suggestions-list" class="suggestion-list"></div>
+            </div>
+          </div>
+        </div><!-- end #analysis-result -->
+      </section>
+
+      <!-- ========== 策略调整记录页面 ========== -->
+      <section id="page-records" class="page-section">
+        <div class="page-header">
+          <h1 class="page-title">策略调整记录</h1>
+          <p class="page-desc">记录每一次策略调整的背景、内容和预期目标</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div style="display:flex;gap:12px;align-items:center;">
+              <select id="filter-type" class="form-select" style="width:150px;">
+                <option value="">全部类型</option>
+                <option value="准入策略">准入策略</option>
+                <option value="额度策略">额度策略</option>
+                <option value="定价策略">定价策略</option>
+                <option value="催收策略">催收策略</option>
+                <option value="模型迭代">模型迭代</option>
+                <option value="其他">其他</option>
+              </select>
+              <select id="filter-status" class="form-select" style="width:150px;">
+                <option value="">全部状态</option>
+                <option value="pending">待复盘</option>
+                <option value="done">已复盘</option>
+              </select>
+              <input type="text" id="search-record" class="form-input" placeholder="搜索策略名称..." style="width:200px;">
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary" id="btn-export-records">
+                <span>📥</span> 导出
+              </button>
+              <button class="btn btn-primary" id="btn-new-record">
+                <span>➕</span> 新增记录
+              </button>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>策略名称</th>
+                    <th>调整日期</th>
+                    <th>策略类型</th>
+                    <th>复盘状态</th>
+                    <th>预期目标</th>
+                    <th>调整内容</th>
+                    <th>备注</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="records-tbody">
+                  <tr>
+                    <td colspan="8" style="text-align:center;padding:40px;color:#9ca3af;">
+                      加载中...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========== 策略复盘页面 ========== -->
+      <section id="page-reviews" class="page-section">
+        <div class="page-header">
+          <h1 class="page-title">策略复盘</h1>
+          <p class="page-desc">对比策略调整前后的数据表现，评估策略效果</p>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+              <select id="filter-review-type" class="form-select" style="width:150px;">
+                <option value="">全部类型</option>
+                <option value="effective">有效</option>
+                <option value="ineffective">无效</option>
+                <option value="observing">观察中</option>
+                <option value="pending">待标注</option>
+              </select>
+              <select id="filter-review-status" class="form-select" style="width:150px;">
+                <option value="">全部状态</option>
+                <option value="pending">待复盘</option>
+                <option value="done">已完成</option>
+              </select>
+              <input type="text" id="search-review" class="form-input" placeholder="搜索策略名称..." style="width:200px;">
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>关联策略</th>
+                    <th>复盘日期</th>
+                    <th>分析类型</th>
+                    <th>指标对比</th>
+                    <th>人工标注 / 心得</th>
+                  </tr>
+                </thead>
+                <tbody id="reviews-tbody">
+                  <tr>
+                    <td colspan="5" style="text-align:center;padding:40px;color:#9ca3af;">
+                      加载中...
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+      <!-- ========== 风控知识库+问答助手页面 ========== -->
+      <section id="page-knowledge" class="page-section" style="display:none;">
+        <div class="page-header">
+          <h1 class="page-title">📚 风控知识库 & 问答助手</h1>
+          <p class="page-desc">输入风控相关问题，AI即时解答——指标计算、策略效果、模型原理，一问即答</p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:320px 1fr;gap:24px;align-items:start;">
+          <!-- 左侧：常见问题分类 -->
+          <div>
+            <div class="card" style="margin-bottom:0;">
+              <div class="card-header">
+                <h3 class="card-title">🔖 常见问题</h3>
+              </div>
+              <div class="card-body" style="padding:16px;">
+                <div id="knowledge-topics-container">
+                  <div style="color:#9ca3af;font-size:0.9rem;padding:10px 0;text-align:center;">加载中...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 右侧：对话区 -->
+          <div>
+            <div class="card" style="margin-bottom:16px;">
+              <div class="card-header" style="padding:16px 20px;">
+                <h3 class="card-title">💬 AI 问答</h3>
+                <button class="btn btn-secondary btn-sm" id="btn-clear-chat" title="清空对话">🗑️ 清空</button>
+              </div>
+              <!-- 对话历史 -->
+              <div id="chat-history" class="chat-history">
+                <div class="chat-welcome">
+                  <div class="chat-welcome-icon">🤖</div>
+                  <div class="chat-welcome-title">你好！我是 RiskPilot 风控知识助手</div>
+                  <div class="chat-welcome-desc">
+                    你可以问我任何风控相关的问题，例如：<br>
+                    「KS值怎么计算？」「PSI超过0.25怎么办？」「复贷策略如何设计？」
+                  </div>
+                </div>
+              </div>
+              <!-- 输入区 -->
+              <div class="chat-input-area">
+                <textarea
+                  id="knowledge-input"
+                  class="chat-textarea"
+                  placeholder="输入你的风控问题... (Ctrl+Enter 发送)"
+                  rows="3"
+                ></textarea>
+                <div style="display:flex;justify-content:flex-end;margin-top:10px;gap:10px;">
+                  <span id="knowledge-char-count" style="align-self:center;font-size:0.8rem;color:#9ca3af;">0 / 2000</span>
+                  <button class="btn btn-primary" id="btn-ask-knowledge">
+                    <span>🚀</span> 发送问题
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+  </main>
+  </div>
+
+  <!-- ========== 弹窗：新增/编辑记录 ========== -->
+  <div id="record-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">新增策略调整记录</h3>
+        <button class="modal-close" onclick="closeRecordModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="record-form">
+          <input type="hidden" id="record-id">
+          
+          <div class="form-group">
+            <label class="form-label">策略名称 *</label>
+            <input type="text" id="record-name" class="form-input" placeholder="如：提高准入门槛策略">
+          </div>
+          
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+            <div class="form-group">
+              <label class="form-label">调整日期 *</label>
+              <input type="date" id="record-date" class="form-input">
+            </div>
+            <div class="form-group">
+              <label class="form-label">策略类型 *</label>
+              <select id="record-type" class="form-select">
+                <option value="准入策略">准入策略</option>
+                <option value="额度策略">额度策略</option>
+                <option value="定价策略">定价策略</option>
+                <option value="催收策略">催收策略</option>
+                <option value="模型迭代">模型迭代</option>
+                <option value="其他">其他</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">调整内容</label>
+            <textarea id="record-content" class="form-textarea" placeholder="描述具体的策略调整内容..."></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">调整原因（用逗号分隔）</label>
+            <input type="text" id="record-reason" class="form-input" placeholder="如：逾期率上升, 监管要求, 业务调整">
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">预期目标</label>
+            <input type="text" id="record-goal" class="form-input" placeholder="如：将M1逾期率降低至5%以下">
+          </div>
+          
+          <div class="form-group">
+            <label class="form-label">备注</label>
+            <textarea id="record-notes" class="form-textarea"></textarea>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeRecordModal()">取消</button>
+        <button class="btn btn-primary" onclick="submitRecord()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 弹窗：保存到记录 ========== -->
+  <div id="save-record-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title">保存分析到策略记录</h3>
+        <button class="modal-close" onclick="closeSaveRecordModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">策略名称 *</label>
+          <input type="text" id="save-record-name" class="form-input" placeholder="如：模型评估-2024年Q1">
+        </div>
+        
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          <div class="form-group">
+            <label class="form-label">调整日期 *</label>
+            <input type="date" id="save-record-date" class="form-input">
+          </div>
+          <div class="form-group">
+            <label class="form-label">策略类型 *</label>
+            <select id="save-record-type" class="form-select">
+              <option value="模型迭代">模型迭代</option>
+              <option value="准入策略">准入策略</option>
+              <option value="额度策略">额度策略</option>
+              <option value="定价策略">定价策略</option>
+              <option value="其他">其他</option>
+            </select>
+          </div>
+        </div>
+        
+        <!-- 调整前指标表格输入 -->
+        <div class="form-group">
+          <label class="form-label">调整前指标</label>
+          <table class="data-table" style="margin-top:8px;">
+            <thead>
+              <tr>
+                <th>指标名称</th>
+                <th>指标值</th>
+                <th style="width:40px;"></th>
+              </tr>
+            </thead>
+            <tbody id="before-metrics-body">
+              <tr>
+                <td><input type="text" class="form-input metric-name" value="KS" style="width:100%;"></td>
+                <td><input type="text" class="form-input metric-value" value="" style="width:100%;"></td>
+                <td><button class="btn btn-sm" onclick="removeMetricRow(this)">×</button></td>
+              </tr>
+              <tr>
+                <td><input type="text" class="form-input metric-name" value="AUC" style="width:100%;"></td>
+                <td><input type="text" class="form-input metric-value" value="" style="width:100%;"></td>
+                <td><button class="btn btn-sm" onclick="removeMetricRow(this)">×</button></td>
+              </tr>
+              <tr>
+                <td><input type="text" class="form-input metric-name" value="PSI" style="width:100%;"></td>
+                <td><input type="text" class="form-input metric-value" value="" style="width:100%;"></td>
+                <td><button class="btn btn-sm" onclick="removeMetricRow(this)">×</button></td>
+              </tr>
+              <tr>
+                <td><input type="text" class="form-input metric-name" value="逾期率" style="width:100%;"></td>
+                <td><input type="text" class="form-input metric-value" value="" style="width:100%;"></td>
+                <td><button class="btn btn-sm" onclick="removeMetricRow(this)">×</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <button class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="addMetricRow('before-metrics-body')">+ 添加指标</button>
+        </div>
+        
+        <!-- 调整后指标表格输入 -->
+        <div class="form-group" style="margin-top:12px;">
+          <label class="form-label">调整后指标</label>
+          <p style="font-size:0.82rem;color:#6b7280;margin:4px 0 8px 0;">（复盘时填写）</p>
+          <table class="data-table" style="margin-top:4px;">
+            <thead>
+              <tr>
+                <th>指标名称</th>
+                <th>指标值</th>
+                <th style="width:40px;"></th>
+              </tr>
+            </thead>
+            <tbody id="after-metrics-body">
+              <tr>
+                <td><input type="text" class="form-input metric-name" value="KS" style="width:100%;"></td>
+                <td><input type="text" class="form-input metric-value" value="" style="width:100%;"></td>
+                <td><button class="btn btn-sm" onclick="removeMetricRow(this)">×</button></td>
+              </tr>
+              <tr>
+                <td><input type="text" class="form-input metric-name" value="AUC" style="width:100%;"></td>
+                <td><input type="text" class="form-input metric-value" value="" style="width:100%;"></td>
+                <td><button class="btn btn-sm" onclick="removeMetricRow(this)">×</button></td>
+              </tr>
+              <tr>
+                <td><input type="text" class="form-input metric-name" value="PSI" style="width:100%;"></td>
+                <td><input type="text" class="form-input metric-value" value="" style="width:100%;"></td>
+                <td><button class="btn btn-sm" onclick="removeMetricRow(this)">×</button></td>
+              </tr>
+              <tr>
+                <td><input type="text" class="form-input metric-name" value="逾期率" style="width:100%;"></td>
+                <td><input type="text" class="form-input metric-value" value="" style="width:100%;"></td>
+                <td><button class="btn btn-sm" onclick="removeMetricRow(this)">×</button></td>
+              </tr>
+            </tbody>
+          </table>
+          <button class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="addMetricRow('after-metrics-body')">+ 添加指标</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeSaveRecordModal()">取消</button>
+        <button class="btn btn-primary" onclick="submitSaveRecord()">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 弹窗：执行复盘 ========== -->
+  <div id="review-modal" class="modal-overlay hidden">
+    <div class="modal" style="max-width:700px;">
+      <div class="modal-header">
+        <h3 class="modal-title">📋 执行策略复盘</h3>
+        <button class="modal-close" onclick="closeReviewModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="review-record-id">
+        
+        <!-- 模式切换 -->
+        <div class="form-group" style="margin-bottom:16px;">
+          <label class="form-label">复盘方式</label>
+          <div style="display:flex;gap:12px;margin-top:8px;">
+            <label class="tag-checkbox" style="flex:1;text-align:center;">
+              <input type="radio" name="review-mode" value="file" checked onchange="switchReviewMode('file')">
+              <span>📁 文件分析</span>
+            </label>
+            <label class="tag-checkbox" style="flex:1;text-align:center;">
+              <input type="radio" name="review-mode" value="manual" onchange="switchReviewMode('manual')">
+              <span>✏️ 手动输入</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- 文件分析模式 -->
+        <div id="review-file-mode">
+          <!-- 上传文件 -->
+          <div class="form-group">
+            <label class="form-label">📁 上传复盘数据文件 *</label>
+            <input type="file" id="review-file" class="form-input" accept=".csv,.xlsx,.xls" style="margin-bottom:8px;">
+            <p style="font-size:0.82rem;color:#6b7280;margin:0;">
+              上传包含调整前后数据的完整文件，AI将根据调整时间自动切分前后对比
+            </p>
+            <div id="review-file-name" style="font-size:0.82rem;color:#10b981;margin-top:4px;display:none;"></div>
+          </div>
+
+          <!-- 列配置（上传后显示） -->
+          <div id="review-cols-config" class="hidden" style="margin-top:16px;padding-top:16px;border-top:1px dashed #e5e7eb;">
+            <!-- 新增：调整时间字段选择 + 手动日期输入 -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">📅 调整日期（手动选择）*</label>
+                <input type="date" id="review-adjustment-date" class="form-input">
+                <p style="font-size:0.78rem;color:#9ca3af;margin-top:4px;">时间点之前=调整前数据，之后=调整后数据</p>
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">📊 时间字段（从文件选择）*</label>
+                <select id="review-time-col" class="form-select">
+                  <option value="">请先上传文件</option>
+                </select>
+                <p style="font-size:0.78rem;color:#9ca3af;margin-top:4px;">用于判断每条数据的时间</p>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">目标列（逾期标签）</label>
+                <select id="review-target-col" class="form-select">
+                  <option value="">请先上传文件</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label class="form-label">分数列</label>
+                <select id="review-score-col" class="form-select">
+                  <option value="">请先上传文件</option>
+                </select>
+                <p style="font-size:0.78rem;color:#9ca3af;margin-top:4px;">留空则自动推断</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 手动输入模式 -->
+        <div id="review-manual-mode" class="hidden">
+          <!-- 分析类型 -->
+          <div class="form-group">
+            <label class="form-label">分析类型</label>
+            <input type="text" id="review-analysis-type" class="form-input" placeholder="如：模型评估、逾期率分析、Lift分析">
+          </div>
+          
+          <!-- 指标对比表格 -->
+          <div class="form-group" style="margin-top:12px;">
+            <label class="form-label">指标对比</label>
+            <table class="data-table" style="margin-top:8px;">
+              <thead>
+                <tr>
+                  <th>指标名称</th>
+                  <th>调整前</th>
+                  <th>调整后</th>
+                  <th>变化</th>
+                  <th style="width:40px;"></th>
+                </tr>
+              </thead>
+              <tbody id="manual-metrics-body">
+                <tr>
+                  <td><input type="text" class="form-input" value="KS" style="width:100%;" readonly></td>
+                  <td><input type="text" class="form-input metric-before" placeholder="调整前" style="width:100%;"></td>
+                  <td><input type="text" class="form-input metric-after" placeholder="调整后" style="width:100%;"></td>
+                  <td><span class="metric-delta" style="font-weight:bold;"></span></td>
+                  <td><button class="btn btn-sm" onclick="removeManualMetricRow(this)">×</button></td>
+                </tr>
+                <tr>
+                  <td><input type="text" class="form-input" value="AUC" style="width:100%;" readonly></td>
+                  <td><input type="text" class="form-input metric-before" placeholder="调整前" style="width:100%;"></td>
+                  <td><input type="text" class="form-input metric-after" placeholder="调整后" style="width:100%;"></td>
+                  <td><span class="metric-delta" style="font-weight:bold;"></span></td>
+                  <td><button class="btn btn-sm" onclick="removeManualMetricRow(this)">×</button></td>
+                </tr>
+                <tr>
+                  <td><input type="text" class="form-input" value="PSI" style="width:100%;" readonly></td>
+                  <td><input type="text" class="form-input metric-before" placeholder="调整前" style="width:100%;"></td>
+                  <td><input type="text" class="form-input metric-after" placeholder="调整后" style="width:100%;"></td>
+                  <td><span class="metric-delta" style="font-weight:bold;"></span></td>
+                  <td><button class="btn btn-sm" onclick="removeManualMetricRow(this)">×</button></td>
+                </tr>
+                <tr>
+                  <td><input type="text" class="form-input" value="逾期率(%)" style="width:100%;" readonly></td>
+                  <td><input type="text" class="form-input metric-before" placeholder="调整前" style="width:100%;"></td>
+                  <td><input type="text" class="form-input metric-after" placeholder="调整后" style="width:100%;"></td>
+                  <td><span class="metric-delta" style="font-weight:bold;"></span></td>
+                  <td><button class="btn btn-sm" onclick="removeManualMetricRow(this)">×</button></td>
+                </tr>
+              </tbody>
+            </table>
+            <button class="btn btn-sm btn-secondary" style="margin-top:8px;" onclick="addManualMetricRow()">+ 添加指标</button>
+          </div>
+          
+          <!-- 复盘结论 -->
+          <div class="form-group" style="margin-top:12px;">
+            <label class="form-label">复盘结论 / 心得笔记</label>
+            <textarea id="review-conclusion" class="form-textarea" placeholder="写下本次复盘的结论、操作经验或改进建议..." style="min-height:100px;"></textarea>
+          </div>
+          
+          <!-- 效果标注 -->
+          <div class="form-group" style="margin-top:12px;">
+            <label class="form-label">策略效果</label>
+            <div style="display:flex;gap:10px;margin-top:8px;">
+              <label class="tag-checkbox" style="flex:1;text-align:center;">
+                <input type="radio" name="review-effect" value="effective">
+                <span>✅ 有效</span>
+              </label>
+              <label class="tag-checkbox" style="flex:1;text-align:center;">
+                <input type="radio" name="review-effect" value="ineffective">
+                <span>❌ 无效</span>
+              </label>
+              <label class="tag-checkbox" style="flex:1;text-align:center;">
+                <input type="radio" name="review-effect" value="observing">
+                <span>🔭 观察中</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeReviewModal()">取消</button>
+        <button class="btn btn-primary" id="btn-start-review" onclick="submitReview()">开始复盘</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 弹窗：复盘结果 ========== -->
+  <div id="review-result-modal" class="modal-overlay hidden">
+    <div class="modal" style="max-width:900px;max-height:90vh;overflow-y:auto;">
+      <div class="modal-header">
+        <h3 class="modal-title">📊 复盘结果</h3>
+        <button class="modal-close" onclick="closeReviewResultModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="review-result-body">
+        <!-- 由 JS 动态填充：可嵌入 iframe 或直接渲染 -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeReviewResultModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 弹窗：人工标注 ========== -->
+  <div id="label-modal" class="modal-overlay hidden">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-header">
+        <h3 class="modal-title">✏️ 人工标注</h3>
+        <button class="modal-close" onclick="closeLabelModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="label-review-id">
+        <div class="form-group">
+          <label class="form-label">标注结论</label>
+          <div style="display:flex;gap:10px;margin-top:8px;">
+            <label class="tag-checkbox" style="flex:1;text-align:center;">
+              <input type="radio" name="manual-label" value="effective">
+              <span>✅ 有效</span>
+            </label>
+            <label class="tag-checkbox" style="flex:1;text-align:center;">
+              <input type="radio" name="manual-label" value="ineffective">
+              <span>❌ 无效</span>
+            </label>
+            <label class="tag-checkbox" style="flex:1;text-align:center;">
+              <input type="radio" name="manual-label" value="observing">
+              <span>🔭 观察中</span>
+            </label>
+          </div>
+        </div>
+        <div class="form-group" style="margin-top:16px;">
+          <label class="form-label">心得笔记</label>
+          <textarea id="label-note" class="form-textarea" placeholder="写下你的复盘心得、操作经验或改进建议..." style="min-height:120px;"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeLabelModal()">取消</button>
+        <button class="btn btn-primary" onclick="submitLabel()">保存标注</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

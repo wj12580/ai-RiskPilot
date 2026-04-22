@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}RiskPilot · 策略分析助手{% endblock %}</title>
+<!-- Bootstrap 5 -->
+<link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.2/css/bootstrap.min.css">
+<!-- Bootstrap Icons -->
+<link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<style>
+  :root {
+    --sidebar-w: 220px;
+    --primary: #1a56db;
+    --sidebar-bg: #1e293b;
+  }
+  body { font-family: 'PingFang SC','Microsoft YaHei',sans-serif; background:#f0f4f8; }
+
+  /* 侧边栏 */
+  .sidebar {
+    position: fixed; left:0; top:0; bottom:0;
+    width: var(--sidebar-w); background: var(--sidebar-bg);
+    display: flex; flex-direction: column; z-index: 1000; overflow-y: auto;
+  }
+  .sidebar-brand { padding: 20px; border-bottom: 1px solid rgba(255,255,255,.08); }
+  .sidebar-brand h5 { color:#fff; margin:0; font-weight:700; }
+  .sidebar-brand small { color:#64748b; font-size:11px; }
+
+  .nav-section { padding: 12px 16px 4px; color:#475569; font-size:11px;
+                  text-transform:uppercase; letter-spacing:.8px; font-weight:600; }
+  .sidebar .nav-link {
+    color:#94a3b8; padding:9px 20px; font-size:14px; display:flex; align-items:center; gap:9px;
+    border-left: 3px solid transparent; transition:all .2s;
+  }
+  .sidebar .nav-link:hover  { color:#fff; background:rgba(255,255,255,.06); }
+  .sidebar .nav-link.active { color:#fff; background:rgba(26,86,219,.25); border-left-color:var(--primary); }
+  .sidebar .nav-link .badge { margin-left:auto; }
+  .sidebar-footer { margin-top:auto; padding:16px 20px; border-top:1px solid rgba(255,255,255,.08); }
+  .user-block { display:flex; align-items:center; gap:10px; }
+  .user-avatar {
+    width:34px; height:34px; border-radius:50%;
+    background:linear-gradient(135deg,#1a56db,#7c3aed);
+    display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:14px;
+  }
+  .user-name  { color:#cbd5e1; font-size:13px; font-weight:500; }
+  .user-role  { color:#475569; font-size:11px; }
+
+  /* 主内容 */
+  .main-wrap { margin-left:var(--sidebar-w); padding:24px; min-height:100vh; }
+
+  /* 顶部 */
+  .topbar {
+    background:#fff; border-radius:12px; padding:14px 20px;
+    display:flex; align-items:center; justify-content:space-between;
+    box-shadow:0 1px 3px rgba(0,0,0,.06); margin-bottom:20px;
+  }
+  .topbar h5 { margin:0; font-weight:700; }
+  .topbar small { color:#64748b; font-size:13px; }
+
+  /* 卡片 */
+  .rp-card {
+    background:#fff; border-radius:12px; padding:20px;
+    border:1px solid #e2e8f0; box-shadow:0 1px 3px rgba(0,0,0,.04);
+    margin-bottom:16px;
+  }
+  .rp-card-title { font-size:15px; font-weight:600; margin-bottom:14px; display:flex; align-items:center; gap:7px; }
+  .rp-card-title::before { content:''; width:4px; height:16px; background:var(--primary); border-radius:2px; }
+
+  /* 统计卡 */
+  .stat-card {
+    background:#fff; border-radius:12px; padding:16px 18px;
+    border:1px solid #e2e8f0; display:flex; align-items:center; gap:14px;
+  }
+  .stat-icon { width:44px; height:44px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; flex-shrink:0; }
+
+  /* 上传区 */
+  .upload-zone {
+    border:2px dashed #c7d2fe; border-radius:10px; padding:28px; text-align:center;
+    background:#f8faff; cursor:pointer; transition:all .2s;
+  }
+  .upload-zone:hover, .upload-zone.drag-over { border-color:var(--primary); background:#eff6ff; }
+
+  /* 指标徽章 */
+  .metric-badge {
+    display:inline-flex; align-items:center; gap:4px;
+    padding:2px 8px; border-radius:20px; font-size:12px; font-weight:500;
+  }
+  .metric-good    { background:#d1fae5; color:#065f46; }
+  .metric-warn    { background:#fef3c7; color:#92400e; }
+  .metric-danger  { background:#fee2e2; color:#991b1b; }
+  .metric-neutral { background:#f1f5f9; color:#475569; }
+
+  /* 分箱表 */
+  .bucket-table th { background:#f8faff; font-size:12px; color:#64748b; font-weight:600; }
+  .bucket-table td, .bucket-table th { padding:8px 10px; }
+  .lift-bar-wrap { display:inline-flex; align-items:center; gap:4px; }
+  .lift-bar { height:14px; background:linear-gradient(90deg,#bfdbfe,#3b82f6); border-radius:2px; }
+
+  /* 时间轴 */
+  .timeline { position:relative; padding-left:28px; }
+  .timeline::before { content:''; position:absolute; left:9px; top:0; bottom:0; width:2px; background:#e2e8f0; }
+  .tl-dot { position:absolute; left:-23px; top:16px; width:10px; height:10px; border-radius:50%; border:2px solid #fff; }
+
+  /* AI 建议 */
+  .ai-box {
+    background:linear-gradient(135deg,#f0f4ff,#f8f0ff);
+    border-radius:10px; padding:16px; border:1px solid #c7d2fe;
+  }
+  .ai-box-header { font-weight:600; font-size:14px; color:#5b21b6; margin-bottom:10px; }
+  .ai-item { display:flex; gap:8px; font-size:13px; margin-bottom:8px; line-height:1.7; }
+  .ai-item::before { content:"•"; color:var(--primary); font-weight:700; flex-shrink:0; margin-top:2px; }
+
+  /* 对比表 */
+  .compare-badge { padding:2px 9px; border-radius:10px; font-size:12px; font-weight:500; }
+  .compare-badge.good { background:#d1fae5; color:#065f46; }
+  .compare-badge.bad  { background:#fee2e2; color:#991b1b; }
+  .compare-badge.warn { background:#fef3c7; color:#92400e; }
+
+  /* 响应式 */
+  @media(max-width:768px){
+    .sidebar{ transform:translateX(-100%); }
+    .main-wrap{ margin-left:0; }
+  }
+</style>
+{% block extra_css %}{% endblock %}
+</head>
+<body>
+
+<!-- 侧边导航 -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <h5>🛡️ RiskPilot</h5>
+    <small>策略分析助手</small>
+  </div>
+
+  <div class="nav-section">核心功能</div>
+  <a href="/analysis" class="nav-link {% if active_page=='analysis' %}active{% endif %}">
+    <i class="bi bi-robot"></i> 策略分析
+  </a>
+  <a href="/records" class="nav-link {% if active_page=='records' %}active{% endif %}">
+    <i class="bi bi-journal-text"></i> 调整记录
+    <span class="badge bg-primary" id="badgeRecords"></span>
+  </a>
+  <a href="/reviews" class="nav-link {% if active_page=='reviews' %}active{% endif %}">
+    <i class="bi bi-search"></i> 策略复盘
+  </a>
+
+  <div class="nav-section" style="margin-top:4px;">历史</div>
+  <a href="/analysis" class="nav-link">
+    <i class="bi bi-clock-history"></i> 分析历史
+  </a>
+
+  <div class="sidebar-footer">
+    <div class="user-block">
+      <div class="user-avatar">我</div>
+      <div>
+        <div class="user-name">策略分析师</div>
+        <div class="user-role">风控 · 信贷业务</div>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- 主内容 -->
+<div class="main-wrap">
+  <div class="topbar">
+    <div>
+      <h5 class="mb-0">{% block page_title %}RiskPilot{% endblock %}</h5>
+      <small>{% block page_subtitle %}风控策略分析助手{% endblock %}</small>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+      <span class="badge bg-light text-dark border" style="font-size:12px;">
+        <i class="bi bi-circle-fill text-success" style="font-size:8px;"></i> 本地运行中
+      </span>
+      <span class="text-muted" style="font-size:12px;" id="topbarTime"></span>
+    </div>
+  </div>
+
+  {% block content %}{% endblock %}
+</div>
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+<!-- ECharts -->
+<script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+
+<script>
+// 更新时间
+function updateTime(){
+  const el = document.getElementById('topbarTime');
+  if(el) el.textContent = new Date().toLocaleString('zh-CN', {month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+updateTime(); setInterval(updateTime, 60000);
+
+// 加载记录数量 badge
+fetch('/api/records?limit=1').then(r=>r.json()).then(d=>{
+  const el = document.getElementById('badgeRecords');
+  if(el && d.total) el.textContent = d.total;
+}).catch(()=>{});
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>
