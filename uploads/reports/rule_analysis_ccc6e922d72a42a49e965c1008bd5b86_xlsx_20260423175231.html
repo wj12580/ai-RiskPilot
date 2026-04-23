@@ -1,0 +1,5475 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>规则分析报告</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 20px; background: #f5f7fa; }
+        .report-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 12px; margin-bottom: 24px; }
+        .report-header h1 { font-size: 28px; margin-bottom: 10px; }
+        .report-header .meta { opacity: 0.9; font-size: 14px; }
+        .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: center; }
+        .stat-card .value { font-size: 28px; font-weight: bold; color: #333; }
+        .stat-card .label { color: #666; font-size: 13px; margin-top: 5px; }
+        .section { background: white; border-radius: 10px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .section-title { font-size: 18px; font-weight: 600; color: #333; margin-bottom: 16px; padding-bottom: 10px; border-bottom: 2px solid #667eea; }
+        .chart-container { position: relative; height: 300px; margin: 16px 0; }
+        table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: 600; color: #333; }
+        tr:hover { background: #f8f9fa; }
+        .tag { display: inline-block; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+        .tag-danger { background: #fee2e2; color: #dc2626; }
+        .tag-success { background: #dcfce7; color: #16a34a; }
+        .tag-warning { background: #fef3c7; color: #d97706; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+        .bin-table { font-size: 14px; }
+        .bin-table th { font-size: 12px; background: #f0f4ff; }
+        .lift-high { color: #dc2626; font-weight: bold; }
+        .lift-mid { color: #d97706; }
+        .lift-low { color: #16a34a; }
+    </style>
+</head>
+<body>
+    <div class="report-header">
+        <h1>📋 规则分析报告</h1>
+        <div class="meta">分析时间: 2026-04-23 17:52</div>
+    </div>
+    
+    <!-- 数据概览 -->
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="value">1,148</div>
+            <div class="label">总样本量</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">584</div>
+            <div class="label">坏样本数</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">50.87%</div>
+            <div class="label">整体逾期率</div>
+        </div>
+        <div class="stat-card">
+            <div class="value">89</div>
+            <div class="label">规则数量</div>
+        </div>
+    </div>
+    
+    <!-- 规则命中分析 -->
+    <div class="section">
+        <div class="section-title">📊 规则命中分析</div>
+        <div class="chart-container">
+            <canvas id="chart-intercept"></canvas>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>规则名称</th>
+                    <th>命中数量</th>
+                    <th>命中率</th>
+                    <th>命中逾期率</th>
+                    <th>未命中逾期率</th>
+                    <th>Lift</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                <tr>
+                    <td><strong>A001</strong></td>
+                    <td>564</td>
+                    <td>49.1%</td>
+                    <td>48.58%</td>
+                    <td>53.08%</td>
+                    <td class="lift-low">0.95x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>A002</strong></td>
+                    <td>451</td>
+                    <td>39.3%</td>
+                    <td>52.11%</td>
+                    <td>50.07%</td>
+                    <td class="lift-mid">1.02x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>A003</strong></td>
+                    <td>765</td>
+                    <td>66.6%</td>
+                    <td>50.72%</td>
+                    <td>51.17%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>A004</strong></td>
+                    <td>147</td>
+                    <td>12.8%</td>
+                    <td>49.66%</td>
+                    <td>51.05%</td>
+                    <td class="lift-low">0.98x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>A005</strong></td>
+                    <td>1,133</td>
+                    <td>98.7%</td>
+                    <td>50.75%</td>
+                    <td>60.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>A006</strong></td>
+                    <td>1,148</td>
+                    <td>100.0%</td>
+                    <td>50.87%</td>
+                    <td>0.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>A011</strong></td>
+                    <td>147</td>
+                    <td>12.8%</td>
+                    <td>49.66%</td>
+                    <td>51.05%</td>
+                    <td class="lift-low">0.98x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>A013</strong></td>
+                    <td>527</td>
+                    <td>45.9%</td>
+                    <td>50.85%</td>
+                    <td>50.89%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>A014</strong></td>
+                    <td>451</td>
+                    <td>39.3%</td>
+                    <td>51.88%</td>
+                    <td>50.22%</td>
+                    <td class="lift-mid">1.02x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>APP001</strong></td>
+                    <td>1,148</td>
+                    <td>100.0%</td>
+                    <td>50.87%</td>
+                    <td>0.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>APP002</strong></td>
+                    <td>1,148</td>
+                    <td>100.0%</td>
+                    <td>50.87%</td>
+                    <td>0.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>APP003</strong></td>
+                    <td>1,148</td>
+                    <td>100.0%</td>
+                    <td>50.87%</td>
+                    <td>0.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>APPLY_HOUR</strong></td>
+                    <td>517</td>
+                    <td>45.0%</td>
+                    <td>52.03%</td>
+                    <td>49.92%</td>
+                    <td class="lift-mid">1.02x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>BD002</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>BD003</strong></td>
+                    <td>26</td>
+                    <td>2.3%</td>
+                    <td>61.54%</td>
+                    <td>50.62%</td>
+                    <td class="lift-mid">1.21x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>BD004</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>BD005</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>BD006</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>BD_FACE_COMPARE_NONE</strong></td>
+                    <td>573</td>
+                    <td>49.9%</td>
+                    <td>50.96%</td>
+                    <td>50.78%</td>
+                    <td class="lift-mid">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>BD_LIVE</strong></td>
+                    <td>520</td>
+                    <td>45.3%</td>
+                    <td>51.35%</td>
+                    <td>50.48%</td>
+                    <td class="lift-mid">1.01x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>BJ_ModelScore</strong></td>
+                    <td>550</td>
+                    <td>47.9%</td>
+                    <td>48.91%</td>
+                    <td>52.68%</td>
+                    <td class="lift-low">0.96x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>BJ_behavior</strong></td>
+                    <td>251</td>
+                    <td>21.9%</td>
+                    <td>47.41%</td>
+                    <td>51.84%</td>
+                    <td class="lift-low">0.93x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>CTS002</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>CTS006</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>CTS007</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>CTS009</strong></td>
+                    <td>3</td>
+                    <td>0.3%</td>
+                    <td>66.67%</td>
+                    <td>50.83%</td>
+                    <td class="lift-mid">1.31x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>CTS012</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>CTS013</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>CTS014</strong></td>
+                    <td>17</td>
+                    <td>1.5%</td>
+                    <td>47.06%</td>
+                    <td>50.93%</td>
+                    <td class="lift-low">0.93x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>CTS015</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>CTS016</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>CTS026</strong></td>
+                    <td>1</td>
+                    <td>0.1%</td>
+                    <td>100.00%</td>
+                    <td>50.83%</td>
+                    <td class="lift-high">1.97x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>DEV001</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>DEV002</strong></td>
+                    <td>1,148</td>
+                    <td>100.0%</td>
+                    <td>50.87%</td>
+                    <td>0.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>DEV004</strong></td>
+                    <td>493</td>
+                    <td>42.9%</td>
+                    <td>51.52%</td>
+                    <td>50.38%</td>
+                    <td class="lift-mid">1.01x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>DEV005</strong></td>
+                    <td>574</td>
+                    <td>50.0%</td>
+                    <td>49.65%</td>
+                    <td>52.09%</td>
+                    <td class="lift-low">0.98x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>DEV009</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>DEV010</strong></td>
+                    <td>1,148</td>
+                    <td>100.0%</td>
+                    <td>50.87%</td>
+                    <td>0.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>DEV_SensorNum</strong></td>
+                    <td>535</td>
+                    <td>46.6%</td>
+                    <td>54.77%</td>
+                    <td>47.47%</td>
+                    <td class="lift-mid">1.08x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>DEV_StorageCapacity</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ECP001</strong></td>
+                    <td>171</td>
+                    <td>14.9%</td>
+                    <td>48.54%</td>
+                    <td>51.28%</td>
+                    <td class="lift-low">0.95x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ECP002</strong></td>
+                    <td>571</td>
+                    <td>49.7%</td>
+                    <td>50.96%</td>
+                    <td>50.78%</td>
+                    <td class="lift-mid">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GD001</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GD002</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GD003</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GD004</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GD005</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GD006</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GD007</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZ001</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZ002</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZ003</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZ004</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZ005</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZ006</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZYQ001</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZYQ002</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZYQ003</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZYQ004</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZYQ005</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>GZYQ006</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>IP001</strong></td>
+                    <td>1,146</td>
+                    <td>99.8%</td>
+                    <td>50.79%</td>
+                    <td>100.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>IP002</strong></td>
+                    <td>17</td>
+                    <td>1.5%</td>
+                    <td>35.29%</td>
+                    <td>51.11%</td>
+                    <td class="lift-low">0.69x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>IZICardId</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>IZICardNameDiff</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>IZI_BLACK</strong></td>
+                    <td>1,148</td>
+                    <td>100.0%</td>
+                    <td>50.87%</td>
+                    <td>0.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>IZI_Conwhatsapp</strong></td>
+                    <td>453</td>
+                    <td>39.5%</td>
+                    <td>50.55%</td>
+                    <td>51.08%</td>
+                    <td class="lift-low">0.99x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>IZI_Credit</strong></td>
+                    <td>571</td>
+                    <td>49.7%</td>
+                    <td>51.31%</td>
+                    <td>50.43%</td>
+                    <td class="lift-mid">1.01x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>IZI_Fraud</strong></td>
+                    <td>573</td>
+                    <td>49.9%</td>
+                    <td>48.87%</td>
+                    <td>52.87%</td>
+                    <td class="lift-low">0.96x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>IZI_whatsapp</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>KYC001</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>KYC002</strong></td>
+                    <td>572</td>
+                    <td>49.8%</td>
+                    <td>52.10%</td>
+                    <td>49.65%</td>
+                    <td class="lift-mid">1.02x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>KYC003</strong></td>
+                    <td>11</td>
+                    <td>1.0%</td>
+                    <td>36.36%</td>
+                    <td>51.01%</td>
+                    <td class="lift-low">0.71x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>KYC004</strong></td>
+                    <td>1,148</td>
+                    <td>100.0%</td>
+                    <td>50.87%</td>
+                    <td>0.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>QD001</strong></td>
+                    <td>1,148</td>
+                    <td>100.0%</td>
+                    <td>50.87%</td>
+                    <td>0.00%</td>
+                    <td class="lift-low">1.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZD013</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZD014</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZD015</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZD016</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZD017</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZD018</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZTCX_001</strong></td>
+                    <td>189</td>
+                    <td>16.5%</td>
+                    <td>56.61%</td>
+                    <td>49.74%</td>
+                    <td class="lift-mid">1.11x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZTCX_002</strong></td>
+                    <td>4</td>
+                    <td>0.3%</td>
+                    <td>50.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.98x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZTCX_003</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZTCX_004</strong></td>
+                    <td>4</td>
+                    <td>0.3%</td>
+                    <td>50.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.98x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZTCX_005</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZTCX_006</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZTCX_007</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+                <tr>
+                    <td><strong>ZTCX_008</strong></td>
+                    <td>0</td>
+                    <td>0.0%</td>
+                    <td>0.00%</td>
+                    <td>50.87%</td>
+                    <td class="lift-low">0.00x</td>
+                </tr>
+
+            </tbody>
+        </table>
+    </div>
+    
+    <!-- 规则分箱分析（新增） -->
+    <div class="section">
+        <div class="section-title">📈 规则分箱分析（取值-首逾-lift）</div>
+        <p style="color: #666; margin-bottom: 16px; font-size: 13px;">
+            说明：取值数>10视为连续型变量做等频分箱，取值数≤10视为离散变量直接展示每个取值
+        </p>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 A001 <span style="color: #666; font-size: 12px;">(等频分箱, 共43个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(17.999, 25.0]</td>
+                        <td>120</td>
+                        <td>10.5%</td>
+                        <td>63</td>
+                        <td>52.50%</td>
+                        <td class="lift-mid">1.03x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(25.0, 29.0]</td>
+                        <td>120</td>
+                        <td>10.5%</td>
+                        <td>60</td>
+                        <td>50.00%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(29.0, 32.0]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>65</td>
+                        <td>56.52%</td>
+                        <td class="lift-mid">1.11x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(32.0, 35.0]</td>
+                        <td>106</td>
+                        <td>9.2%</td>
+                        <td>56</td>
+                        <td>52.83%</td>
+                        <td class="lift-mid">1.04x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(35.0, 38.0]</td>
+                        <td>123</td>
+                        <td>10.7%</td>
+                        <td>66</td>
+                        <td>53.66%</td>
+                        <td class="lift-mid">1.05x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(38.0, 41.0]</td>
+                        <td>126</td>
+                        <td>11.0%</td>
+                        <td>66</td>
+                        <td>52.38%</td>
+                        <td class="lift-mid">1.03x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(41.0, 43.0]</td>
+                        <td>95</td>
+                        <td>8.3%</td>
+                        <td>47</td>
+                        <td>49.47%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(43.0, 46.0]</td>
+                        <td>120</td>
+                        <td>10.5%</td>
+                        <td>54</td>
+                        <td>45.00%</td>
+                        <td class="lift-low">0.88x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(46.0, 50.0]</td>
+                        <td>112</td>
+                        <td>9.8%</td>
+                        <td>58</td>
+                        <td>51.79%</td>
+                        <td class="lift-mid">1.02x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(50.0, 60.0]</td>
+                        <td>111</td>
+                        <td>9.7%</td>
+                        <td>49</td>
+                        <td>44.14%</td>
+                        <td class="lift-low">0.87x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 A002 <span style="color: #666; font-size: 12px;">(离散取值, 共4个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>3.0</td>
+                        <td>6</td>
+                        <td>0.5%</td>
+                        <td>4</td>
+                        <td>66.67%</td>
+                        <td class="lift-mid">1.31x</td>
+                    </tr>
+
+                    <tr>
+                        <td>4.0</td>
+                        <td>9</td>
+                        <td>0.8%</td>
+                        <td>5</td>
+                        <td>55.56%</td>
+                        <td class="lift-mid">1.09x</td>
+                    </tr>
+
+                    <tr>
+                        <td>2.0</td>
+                        <td>436</td>
+                        <td>38.0%</td>
+                        <td>226</td>
+                        <td>51.83%</td>
+                        <td class="lift-mid">1.02x</td>
+                    </tr>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>697</td>
+                        <td>60.7%</td>
+                        <td>349</td>
+                        <td>50.07%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 A003 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>Indonesia</td>
+                        <td>765</td>
+                        <td>100.0%</td>
+                        <td>388</td>
+                        <td>50.72%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 A004 <span style="color: #666; font-size: 12px;">(离散取值, 共3个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>2.0</td>
+                        <td>31</td>
+                        <td>2.8%</td>
+                        <td>16</td>
+                        <td>51.61%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>964</td>
+                        <td>86.8%</td>
+                        <td>491</td>
+                        <td>50.93%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>116</td>
+                        <td>10.4%</td>
+                        <td>57</td>
+                        <td>49.14%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 A005 <span style="color: #666; font-size: 12px;">(等频分箱, 共24个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-0.001, 1.0]</td>
+                        <td>560</td>
+                        <td>49.4%</td>
+                        <td>274</td>
+                        <td>48.93%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(1.0, 2.0]</td>
+                        <td>93</td>
+                        <td>8.2%</td>
+                        <td>40</td>
+                        <td>43.01%</td>
+                        <td class="lift-low">0.85x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(2.0, 3.0]</td>
+                        <td>85</td>
+                        <td>7.5%</td>
+                        <td>42</td>
+                        <td>49.41%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(3.0, 4.0]</td>
+                        <td>66</td>
+                        <td>5.8%</td>
+                        <td>38</td>
+                        <td>57.58%</td>
+                        <td class="lift-mid">1.13x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(4.0, 6.0]</td>
+                        <td>115</td>
+                        <td>10.2%</td>
+                        <td>63</td>
+                        <td>54.78%</td>
+                        <td class="lift-mid">1.08x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(6.0, 9.0]</td>
+                        <td>121</td>
+                        <td>10.7%</td>
+                        <td>63</td>
+                        <td>52.07%</td>
+                        <td class="lift-mid">1.02x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(9.0, 23.0]</td>
+                        <td>93</td>
+                        <td>8.2%</td>
+                        <td>55</td>
+                        <td>59.14%</td>
+                        <td class="lift-mid">1.16x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 A006 <span style="color: #666; font-size: 12px;">(离散取值, 共10个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>Bank Mega</td>
+                        <td>3</td>
+                        <td>0.3%</td>
+                        <td>2</td>
+                        <td>66.67%</td>
+                        <td class="lift-mid">1.31x</td>
+                    </tr>
+
+                    <tr>
+                        <td>Bank Central Asia</td>
+                        <td>340</td>
+                        <td>29.6%</td>
+                        <td>188</td>
+                        <td>55.29%</td>
+                        <td class="lift-mid">1.09x</td>
+                    </tr>
+
+                    <tr>
+                        <td>Bank Mandiri</td>
+                        <td>212</td>
+                        <td>18.5%</td>
+                        <td>115</td>
+                        <td>54.25%</td>
+                        <td class="lift-mid">1.07x</td>
+                    </tr>
+
+                    <tr>
+                        <td>Bank CIMB Niaga</td>
+                        <td>4</td>
+                        <td>0.3%</td>
+                        <td>2</td>
+                        <td>50.00%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>Bank Tabungan Negara</td>
+                        <td>2</td>
+                        <td>0.2%</td>
+                        <td>1</td>
+                        <td>50.00%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>Bank Negara Indonesia</td>
+                        <td>109</td>
+                        <td>9.5%</td>
+                        <td>54</td>
+                        <td>49.54%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>Bank Rakyat Indonesia</td>
+                        <td>475</td>
+                        <td>41.4%</td>
+                        <td>222</td>
+                        <td>46.74%</td>
+                        <td class="lift-low">0.92x</td>
+                    </tr>
+
+                    <tr>
+                        <td>Bank Danamon</td>
+                        <td>1</td>
+                        <td>0.1%</td>
+                        <td>0</td>
+                        <td>0.00%</td>
+                        <td class="lift-low">0.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>Bank Panin</td>
+                        <td>1</td>
+                        <td>0.1%</td>
+                        <td>0</td>
+                        <td>0.00%</td>
+                        <td class="lift-low">0.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>Bank Permata</td>
+                        <td>1</td>
+                        <td>0.1%</td>
+                        <td>0</td>
+                        <td>0.00%</td>
+                        <td class="lift-low">0.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 A011 <span style="color: #666; font-size: 12px;">(离散取值, 共3个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>2.0</td>
+                        <td>31</td>
+                        <td>2.8%</td>
+                        <td>16</td>
+                        <td>51.61%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>964</td>
+                        <td>86.8%</td>
+                        <td>491</td>
+                        <td>50.93%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>116</td>
+                        <td>10.4%</td>
+                        <td>57</td>
+                        <td>49.14%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 A013 <span style="color: #666; font-size: 12px;">(等频分箱, 共12个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(0.999, 2.0]</td>
+                        <td>790</td>
+                        <td>71.1%</td>
+                        <td>398</td>
+                        <td>50.38%</td>
+                        <td class="lift-low">0.99x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(2.0, 3.0]</td>
+                        <td>104</td>
+                        <td>9.4%</td>
+                        <td>58</td>
+                        <td>55.77%</td>
+                        <td class="lift-mid">1.10x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(3.0, 5.0]</td>
+                        <td>112</td>
+                        <td>10.1%</td>
+                        <td>56</td>
+                        <td>50.00%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(5.0, 12.0]</td>
+                        <td>105</td>
+                        <td>9.5%</td>
+                        <td>52</td>
+                        <td>49.52%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 A014 <span style="color: #666; font-size: 12px;">(等频分箱, 共20个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(0.999, 2.0]</td>
+                        <td>660</td>
+                        <td>59.4%</td>
+                        <td>330</td>
+                        <td>50.00%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(2.0, 3.0]</td>
+                        <td>103</td>
+                        <td>9.3%</td>
+                        <td>49</td>
+                        <td>47.57%</td>
+                        <td class="lift-low">0.94x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(3.0, 4.0]</td>
+                        <td>73</td>
+                        <td>6.6%</td>
+                        <td>38</td>
+                        <td>52.05%</td>
+                        <td class="lift-mid">1.02x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(4.0, 6.0]</td>
+                        <td>89</td>
+                        <td>8.0%</td>
+                        <td>53</td>
+                        <td>59.55%</td>
+                        <td class="lift-mid">1.17x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(6.0, 9.0]</td>
+                        <td>96</td>
+                        <td>8.6%</td>
+                        <td>51</td>
+                        <td>53.12%</td>
+                        <td class="lift-mid">1.04x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(9.0, 21.0]</td>
+                        <td>90</td>
+                        <td>8.1%</td>
+                        <td>43</td>
+                        <td>47.78%</td>
+                        <td class="lift-low">0.94x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 APP001 <span style="color: #666; font-size: 12px;">(等频分箱, 共1131个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-0.001, 97.7]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>62</td>
+                        <td>53.91%</td>
+                        <td class="lift-mid">1.06x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(97.7, 212.4]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>57</td>
+                        <td>49.57%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(212.4, 327.1]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>56</td>
+                        <td>48.70%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(327.1, 441.8]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>59</td>
+                        <td>51.75%</td>
+                        <td class="lift-mid">1.02x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(441.8, 556.5]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>57</td>
+                        <td>49.57%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(556.5, 671.2]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>61</td>
+                        <td>53.04%</td>
+                        <td class="lift-mid">1.04x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(671.2, 785.9]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>48</td>
+                        <td>42.11%</td>
+                        <td class="lift-low">0.83x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(785.9, 900.6]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>51</td>
+                        <td>44.35%</td>
+                        <td class="lift-low">0.87x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(900.6, 1015.3]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>67</td>
+                        <td>58.26%</td>
+                        <td class="lift-mid">1.15x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(1015.3, 1130.0]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>66</td>
+                        <td>57.39%</td>
+                        <td class="lift-mid">1.13x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 APP002 <span style="color: #666; font-size: 12px;">(等频分箱, 共40个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-0.001, 1.0]</td>
+                        <td>164</td>
+                        <td>14.3%</td>
+                        <td>80</td>
+                        <td>48.78%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(1.0, 2.0]</td>
+                        <td>76</td>
+                        <td>6.6%</td>
+                        <td>39</td>
+                        <td>51.32%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(2.0, 4.0]</td>
+                        <td>129</td>
+                        <td>11.2%</td>
+                        <td>68</td>
+                        <td>52.71%</td>
+                        <td class="lift-mid">1.04x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(4.0, 6.0]</td>
+                        <td>123</td>
+                        <td>10.7%</td>
+                        <td>67</td>
+                        <td>54.47%</td>
+                        <td class="lift-mid">1.07x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(6.0, 8.0]</td>
+                        <td>120</td>
+                        <td>10.5%</td>
+                        <td>57</td>
+                        <td>47.50%</td>
+                        <td class="lift-low">0.93x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(8.0, 10.0]</td>
+                        <td>108</td>
+                        <td>9.4%</td>
+                        <td>59</td>
+                        <td>54.63%</td>
+                        <td class="lift-mid">1.07x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(10.0, 12.0]</td>
+                        <td>95</td>
+                        <td>8.3%</td>
+                        <td>50</td>
+                        <td>52.63%</td>
+                        <td class="lift-mid">1.03x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(12.0, 15.0]</td>
+                        <td>134</td>
+                        <td>11.7%</td>
+                        <td>65</td>
+                        <td>48.51%</td>
+                        <td class="lift-low">0.95x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(15.0, 18.0]</td>
+                        <td>122</td>
+                        <td>10.6%</td>
+                        <td>60</td>
+                        <td>49.18%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(18.0, 39.0]</td>
+                        <td>77</td>
+                        <td>6.7%</td>
+                        <td>39</td>
+                        <td>50.65%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 APP003 <span style="color: #666; font-size: 12px;">(等频分箱, 共131个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-0.001, 4.0]</td>
+                        <td>131</td>
+                        <td>11.4%</td>
+                        <td>69</td>
+                        <td>52.67%</td>
+                        <td class="lift-mid">1.04x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(4.0, 9.0]</td>
+                        <td>117</td>
+                        <td>10.2%</td>
+                        <td>63</td>
+                        <td>53.85%</td>
+                        <td class="lift-mid">1.06x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(9.0, 14.0]</td>
+                        <td>108</td>
+                        <td>9.4%</td>
+                        <td>57</td>
+                        <td>52.78%</td>
+                        <td class="lift-mid">1.04x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(14.0, 20.0]</td>
+                        <td>118</td>
+                        <td>10.3%</td>
+                        <td>61</td>
+                        <td>51.69%</td>
+                        <td class="lift-mid">1.02x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(20.0, 26.0]</td>
+                        <td>107</td>
+                        <td>9.3%</td>
+                        <td>56</td>
+                        <td>52.34%</td>
+                        <td class="lift-mid">1.03x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(26.0, 33.0]</td>
+                        <td>112</td>
+                        <td>9.8%</td>
+                        <td>51</td>
+                        <td>45.54%</td>
+                        <td class="lift-low">0.90x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(33.0, 42.0]</td>
+                        <td>111</td>
+                        <td>9.7%</td>
+                        <td>55</td>
+                        <td>49.55%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(42.0, 55.0]</td>
+                        <td>121</td>
+                        <td>10.5%</td>
+                        <td>58</td>
+                        <td>47.93%</td>
+                        <td class="lift-low">0.94x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(55.0, 73.0]</td>
+                        <td>109</td>
+                        <td>9.5%</td>
+                        <td>61</td>
+                        <td>55.96%</td>
+                        <td class="lift-mid">1.10x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(73.0, 130.0]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>53</td>
+                        <td>46.49%</td>
+                        <td class="lift-low">0.91x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 APPLY_HOUR <span style="color: #666; font-size: 12px;">(等频分箱, 共24个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-0.001, 6.0]</td>
+                        <td>118</td>
+                        <td>10.3%</td>
+                        <td>60</td>
+                        <td>50.85%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(6.0, 9.0]</td>
+                        <td>200</td>
+                        <td>17.4%</td>
+                        <td>89</td>
+                        <td>44.50%</td>
+                        <td class="lift-low">0.87x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(9.0, 10.0]</td>
+                        <td>75</td>
+                        <td>6.5%</td>
+                        <td>46</td>
+                        <td>61.33%</td>
+                        <td class="lift-mid">1.21x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(10.0, 11.0]</td>
+                        <td>72</td>
+                        <td>6.3%</td>
+                        <td>31</td>
+                        <td>43.06%</td>
+                        <td class="lift-low">0.85x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(11.0, 13.0]</td>
+                        <td>166</td>
+                        <td>14.5%</td>
+                        <td>89</td>
+                        <td>53.61%</td>
+                        <td class="lift-mid">1.05x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(13.0, 14.0]</td>
+                        <td>72</td>
+                        <td>6.3%</td>
+                        <td>41</td>
+                        <td>56.94%</td>
+                        <td class="lift-mid">1.12x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(14.0, 16.0]</td>
+                        <td>131</td>
+                        <td>11.4%</td>
+                        <td>65</td>
+                        <td>49.62%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(16.0, 18.0]</td>
+                        <td>111</td>
+                        <td>9.7%</td>
+                        <td>64</td>
+                        <td>57.66%</td>
+                        <td class="lift-mid">1.13x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(18.0, 20.0]</td>
+                        <td>97</td>
+                        <td>8.4%</td>
+                        <td>43</td>
+                        <td>44.33%</td>
+                        <td class="lift-low">0.87x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(20.0, 23.0]</td>
+                        <td>106</td>
+                        <td>9.2%</td>
+                        <td>56</td>
+                        <td>52.83%</td>
+                        <td class="lift-mid">1.04x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 BD002 <span style="color: #666; font-size: 12px;">(离散取值, 共2个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>1,147</td>
+                        <td>99.9%</td>
+                        <td>584</td>
+                        <td>50.92%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1</td>
+                        <td>0.1%</td>
+                        <td>0</td>
+                        <td>0.00%</td>
+                        <td class="lift-low">0.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 BD003 <span style="color: #666; font-size: 12px;">(离散取值, 共4个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>3.0</td>
+                        <td>4</td>
+                        <td>0.3%</td>
+                        <td>4</td>
+                        <td>100.00%</td>
+                        <td class="lift-high">1.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>2.0</td>
+                        <td>22</td>
+                        <td>1.9%</td>
+                        <td>12</td>
+                        <td>54.55%</td>
+                        <td class="lift-mid">1.07x</td>
+                    </tr>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>1,121</td>
+                        <td>97.6%</td>
+                        <td>568</td>
+                        <td>50.67%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1</td>
+                        <td>0.1%</td>
+                        <td>0</td>
+                        <td>0.00%</td>
+                        <td class="lift-low">0.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 BD004 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 BD005 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 BD006 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 BD_FACE_COMPARE_NONE <span style="color: #666; font-size: 12px;">(等频分箱, 共1106个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-0.001, 65.294]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>66</td>
+                        <td>57.39%</td>
+                        <td class="lift-mid">1.13x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(65.294, 74.288]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>59</td>
+                        <td>51.30%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(74.288, 77.191]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>53</td>
+                        <td>46.49%</td>
+                        <td class="lift-low">0.91x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(77.191, 79.247]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>47</td>
+                        <td>40.87%</td>
+                        <td class="lift-low">0.80x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(79.247, 82.784]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>66</td>
+                        <td>57.89%</td>
+                        <td class="lift-mid">1.14x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(82.784, 86.28]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>55</td>
+                        <td>47.83%</td>
+                        <td class="lift-low">0.94x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(86.28, 90.084]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>54</td>
+                        <td>47.37%</td>
+                        <td class="lift-low">0.93x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(90.084, 91.49]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>55</td>
+                        <td>47.83%</td>
+                        <td class="lift-low">0.94x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(91.49, 92.965]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>61</td>
+                        <td>53.51%</td>
+                        <td class="lift-mid">1.05x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(92.965, 96.627]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>67</td>
+                        <td>58.26%</td>
+                        <td class="lift-mid">1.15x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 BD_LIVE <span style="color: #666; font-size: 12px;">(等频分箱, 共224个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-9999.000001, 0.999539]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>51</td>
+                        <td>44.35%</td>
+                        <td class="lift-low">0.87x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.999539, 0.999887]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>47</td>
+                        <td>40.87%</td>
+                        <td class="lift-low">0.80x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.999887, 0.999954]</td>
+                        <td>123</td>
+                        <td>10.7%</td>
+                        <td>71</td>
+                        <td>57.72%</td>
+                        <td class="lift-mid">1.13x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.999954, 0.999978]</td>
+                        <td>116</td>
+                        <td>10.1%</td>
+                        <td>67</td>
+                        <td>57.76%</td>
+                        <td class="lift-mid">1.14x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.999978, 0.999989]</td>
+                        <td>159</td>
+                        <td>13.9%</td>
+                        <td>81</td>
+                        <td>50.94%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.999989, 0.999992]</td>
+                        <td>72</td>
+                        <td>6.3%</td>
+                        <td>36</td>
+                        <td>50.00%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.999992, 0.999995]</td>
+                        <td>122</td>
+                        <td>10.6%</td>
+                        <td>62</td>
+                        <td>50.82%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.999995, 0.999997]</td>
+                        <td>200</td>
+                        <td>17.4%</td>
+                        <td>104</td>
+                        <td>52.00%</td>
+                        <td class="lift-mid">1.02x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.999997, 1.0]</td>
+                        <td>126</td>
+                        <td>11.0%</td>
+                        <td>65</td>
+                        <td>51.59%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 BJ_ModelScore <span style="color: #666; font-size: 12px;">(等频分箱, 共150个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(0.999, 3.0]</td>
+                        <td>191</td>
+                        <td>16.6%</td>
+                        <td>98</td>
+                        <td>51.31%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(3.0, 4.0]</td>
+                        <td>75</td>
+                        <td>6.5%</td>
+                        <td>40</td>
+                        <td>53.33%</td>
+                        <td class="lift-mid">1.05x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(4.0, 6.0]</td>
+                        <td>131</td>
+                        <td>11.4%</td>
+                        <td>64</td>
+                        <td>48.85%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(6.0, 8.0]</td>
+                        <td>103</td>
+                        <td>9.0%</td>
+                        <td>65</td>
+                        <td>63.11%</td>
+                        <td class="lift-mid">1.24x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(8.0, 11.0]</td>
+                        <td>98</td>
+                        <td>8.5%</td>
+                        <td>48</td>
+                        <td>48.98%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(11.0, 15.0]</td>
+                        <td>103</td>
+                        <td>9.0%</td>
+                        <td>41</td>
+                        <td>39.81%</td>
+                        <td class="lift-low">0.78x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(15.0, 23.0]</td>
+                        <td>103</td>
+                        <td>9.0%</td>
+                        <td>55</td>
+                        <td>53.40%</td>
+                        <td class="lift-mid">1.05x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(23.0, 38.0]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>62</td>
+                        <td>53.91%</td>
+                        <td class="lift-mid">1.06x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(38.0, 79.0]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>56</td>
+                        <td>48.70%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(79.0, 365.0]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>55</td>
+                        <td>48.25%</td>
+                        <td class="lift-low">0.95x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 BJ_behavior <span style="color: #666; font-size: 12px;">(等频分箱, 共165个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-0.001, 0.0178]</td>
+                        <td>809</td>
+                        <td>79.9%</td>
+                        <td>419</td>
+                        <td>51.79%</td>
+                        <td class="lift-mid">1.02x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.0178, 0.0833]</td>
+                        <td>102</td>
+                        <td>10.1%</td>
+                        <td>42</td>
+                        <td>41.18%</td>
+                        <td class="lift-low">0.81x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.0833, 0.25]</td>
+                        <td>101</td>
+                        <td>10.0%</td>
+                        <td>50</td>
+                        <td>49.50%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 CTS002 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 CTS006 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 CTS007 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 CTS009 <span style="color: #666; font-size: 12px;">(离散取值, 共2个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>3</td>
+                        <td>0.3%</td>
+                        <td>2</td>
+                        <td>66.67%</td>
+                        <td class="lift-mid">1.31x</td>
+                    </tr>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,145</td>
+                        <td>99.7%</td>
+                        <td>582</td>
+                        <td>50.83%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 CTS012 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 CTS013 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 CTS014 <span style="color: #666; font-size: 12px;">(离散取值, 共2个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>1,131</td>
+                        <td>98.5%</td>
+                        <td>576</td>
+                        <td>50.93%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>2.0</td>
+                        <td>17</td>
+                        <td>1.5%</td>
+                        <td>8</td>
+                        <td>47.06%</td>
+                        <td class="lift-low">0.93x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 CTS015 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 CTS016 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 CTS026 <span style="color: #666; font-size: 12px;">(离散取值, 共2个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>1</td>
+                        <td>0.1%</td>
+                        <td>1</td>
+                        <td>100.00%</td>
+                        <td class="lift-high">1.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,147</td>
+                        <td>99.9%</td>
+                        <td>583</td>
+                        <td>50.83%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 DEV001 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 DEV002 <span style="color: #666; font-size: 12px;">(离散取值, 共2个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>English</td>
+                        <td>19</td>
+                        <td>1.7%</td>
+                        <td>11</td>
+                        <td>57.89%</td>
+                        <td class="lift-mid">1.14x</td>
+                    </tr>
+
+                    <tr>
+                        <td>Indonesia</td>
+                        <td>1,129</td>
+                        <td>98.3%</td>
+                        <td>573</td>
+                        <td>50.75%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 DEV004 <span style="color: #666; font-size: 12px;">(等频分箱, 共14个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(5.999, 6.4]</td>
+                        <td>148</td>
+                        <td>12.9%</td>
+                        <td>69</td>
+                        <td>46.62%</td>
+                        <td class="lift-low">0.92x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(6.4, 6.5]</td>
+                        <td>288</td>
+                        <td>25.1%</td>
+                        <td>136</td>
+                        <td>47.22%</td>
+                        <td class="lift-low">0.93x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(6.5, 6.6]</td>
+                        <td>219</td>
+                        <td>19.1%</td>
+                        <td>125</td>
+                        <td>57.08%</td>
+                        <td class="lift-mid">1.12x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(6.6, 6.7]</td>
+                        <td>375</td>
+                        <td>32.7%</td>
+                        <td>197</td>
+                        <td>52.53%</td>
+                        <td class="lift-mid">1.03x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(6.7, 6.8]</td>
+                        <td>88</td>
+                        <td>7.7%</td>
+                        <td>41</td>
+                        <td>46.59%</td>
+                        <td class="lift-low">0.92x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(6.8, 15.9]</td>
+                        <td>30</td>
+                        <td>2.6%</td>
+                        <td>16</td>
+                        <td>53.33%</td>
+                        <td class="lift-mid">1.05x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 DEV005 <span style="color: #666; font-size: 12px;">(等频分箱, 共1139个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-0.001, 21370.3]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>64</td>
+                        <td>55.65%</td>
+                        <td class="lift-mid">1.09x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(21370.3, 61237.8]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>58</td>
+                        <td>50.43%</td>
+                        <td class="lift-low">0.99x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(61237.8, 117230.2]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>67</td>
+                        <td>58.26%</td>
+                        <td class="lift-mid">1.15x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(117230.2, 189310.2]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>55</td>
+                        <td>48.25%</td>
+                        <td class="lift-low">0.95x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(189310.2, 316653.0]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>55</td>
+                        <td>47.83%</td>
+                        <td class="lift-low">0.94x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(316653.0, 461268.4]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>50</td>
+                        <td>43.48%</td>
+                        <td class="lift-low">0.85x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(461268.4, 714689.6]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>60</td>
+                        <td>52.63%</td>
+                        <td class="lift-mid">1.03x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(714689.6, 1134476.2]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>58</td>
+                        <td>50.43%</td>
+                        <td class="lift-low">0.99x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(1134476.2, 1978296.5]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>59</td>
+                        <td>51.30%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(1978296.5, 20888721.0]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>58</td>
+                        <td>50.43%</td>
+                        <td class="lift-low">0.99x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 DEV009 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 DEV010 <span style="color: #666; font-size: 12px;">(离散取值, 共10个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>11</td>
+                        <td>130</td>
+                        <td>11.3%</td>
+                        <td>71</td>
+                        <td>54.62%</td>
+                        <td class="lift-mid">1.07x</td>
+                    </tr>
+
+                    <tr>
+                        <td>16</td>
+                        <td>123</td>
+                        <td>10.7%</td>
+                        <td>65</td>
+                        <td>52.85%</td>
+                        <td class="lift-mid">1.04x</td>
+                    </tr>
+
+                    <tr>
+                        <td>14</td>
+                        <td>202</td>
+                        <td>17.6%</td>
+                        <td>106</td>
+                        <td>52.48%</td>
+                        <td class="lift-mid">1.03x</td>
+                    </tr>
+
+                    <tr>
+                        <td>9</td>
+                        <td>29</td>
+                        <td>2.5%</td>
+                        <td>15</td>
+                        <td>51.72%</td>
+                        <td class="lift-mid">1.02x</td>
+                    </tr>
+
+                    <tr>
+                        <td>15</td>
+                        <td>305</td>
+                        <td>26.6%</td>
+                        <td>156</td>
+                        <td>51.15%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                    <tr>
+                        <td>10</td>
+                        <td>52</td>
+                        <td>4.5%</td>
+                        <td>26</td>
+                        <td>50.00%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>13</td>
+                        <td>179</td>
+                        <td>15.6%</td>
+                        <td>89</td>
+                        <td>49.72%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>12</td>
+                        <td>107</td>
+                        <td>9.3%</td>
+                        <td>52</td>
+                        <td>48.60%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>8.1.0</td>
+                        <td>20</td>
+                        <td>1.7%</td>
+                        <td>4</td>
+                        <td>20.00%</td>
+                        <td class="lift-low">0.39x</td>
+                    </tr>
+
+                    <tr>
+                        <td>7.1.1</td>
+                        <td>1</td>
+                        <td>0.1%</td>
+                        <td>0</td>
+                        <td>0.00%</td>
+                        <td class="lift-low">0.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 DEV_SensorNum <span style="color: #666; font-size: 12px;">(等频分箱, 共57个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(2.999, 19.0]</td>
+                        <td>139</td>
+                        <td>12.1%</td>
+                        <td>71</td>
+                        <td>51.08%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(19.0, 22.0]</td>
+                        <td>132</td>
+                        <td>11.5%</td>
+                        <td>66</td>
+                        <td>50.00%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(22.0, 23.0]</td>
+                        <td>131</td>
+                        <td>11.4%</td>
+                        <td>65</td>
+                        <td>49.62%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(23.0, 24.0]</td>
+                        <td>113</td>
+                        <td>9.8%</td>
+                        <td>50</td>
+                        <td>44.25%</td>
+                        <td class="lift-low">0.87x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(24.0, 25.0]</td>
+                        <td>98</td>
+                        <td>8.5%</td>
+                        <td>39</td>
+                        <td>39.80%</td>
+                        <td class="lift-low">0.78x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(25.0, 27.0]</td>
+                        <td>102</td>
+                        <td>8.9%</td>
+                        <td>49</td>
+                        <td>48.04%</td>
+                        <td class="lift-low">0.94x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(27.0, 29.0]</td>
+                        <td>91</td>
+                        <td>7.9%</td>
+                        <td>52</td>
+                        <td>57.14%</td>
+                        <td class="lift-mid">1.12x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(29.0, 33.0]</td>
+                        <td>131</td>
+                        <td>11.4%</td>
+                        <td>73</td>
+                        <td>55.73%</td>
+                        <td class="lift-mid">1.10x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(33.0, 39.3]</td>
+                        <td>96</td>
+                        <td>8.4%</td>
+                        <td>54</td>
+                        <td>56.25%</td>
+                        <td class="lift-mid">1.11x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(39.3, 74.0]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>65</td>
+                        <td>56.52%</td>
+                        <td class="lift-mid">1.11x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 DEV_StorageCapacity <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ECP001 <span style="color: #666; font-size: 12px;">(离散取值, 共8个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>11.0</td>
+                        <td>3</td>
+                        <td>0.3%</td>
+                        <td>2</td>
+                        <td>66.67%</td>
+                        <td class="lift-mid">1.31x</td>
+                    </tr>
+
+                    <tr>
+                        <td>10.0</td>
+                        <td>5</td>
+                        <td>0.4%</td>
+                        <td>3</td>
+                        <td>60.00%</td>
+                        <td class="lift-mid">1.18x</td>
+                    </tr>
+
+                    <tr>
+                        <td>5.0</td>
+                        <td>19</td>
+                        <td>1.7%</td>
+                        <td>11</td>
+                        <td>57.89%</td>
+                        <td class="lift-mid">1.14x</td>
+                    </tr>
+
+                    <tr>
+                        <td>9.0</td>
+                        <td>19</td>
+                        <td>1.7%</td>
+                        <td>11</td>
+                        <td>57.89%</td>
+                        <td class="lift-mid">1.14x</td>
+                    </tr>
+
+                    <tr>
+                        <td>6.0</td>
+                        <td>958</td>
+                        <td>83.4%</td>
+                        <td>490</td>
+                        <td>51.15%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                    <tr>
+                        <td>7.0</td>
+                        <td>98</td>
+                        <td>8.5%</td>
+                        <td>46</td>
+                        <td>46.94%</td>
+                        <td class="lift-low">0.92x</td>
+                    </tr>
+
+                    <tr>
+                        <td>8.0</td>
+                        <td>45</td>
+                        <td>3.9%</td>
+                        <td>21</td>
+                        <td>46.67%</td>
+                        <td class="lift-low">0.92x</td>
+                    </tr>
+
+                    <tr>
+                        <td>12.0</td>
+                        <td>1</td>
+                        <td>0.1%</td>
+                        <td>0</td>
+                        <td>0.00%</td>
+                        <td class="lift-low">0.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ECP002 <span style="color: #666; font-size: 12px;">(等频分箱, 共165个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(5.999, 15.0]</td>
+                        <td>130</td>
+                        <td>11.3%</td>
+                        <td>72</td>
+                        <td>55.38%</td>
+                        <td class="lift-mid">1.09x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(15.0, 19.0]</td>
+                        <td>104</td>
+                        <td>9.1%</td>
+                        <td>58</td>
+                        <td>55.77%</td>
+                        <td class="lift-mid">1.10x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(19.0, 24.0]</td>
+                        <td>136</td>
+                        <td>11.8%</td>
+                        <td>74</td>
+                        <td>54.41%</td>
+                        <td class="lift-mid">1.07x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(24.0, 28.0]</td>
+                        <td>90</td>
+                        <td>7.8%</td>
+                        <td>38</td>
+                        <td>42.22%</td>
+                        <td class="lift-low">0.83x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(28.0, 34.0]</td>
+                        <td>117</td>
+                        <td>10.2%</td>
+                        <td>51</td>
+                        <td>43.59%</td>
+                        <td class="lift-low">0.86x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(34.0, 43.0]</td>
+                        <td>117</td>
+                        <td>10.2%</td>
+                        <td>66</td>
+                        <td>56.41%</td>
+                        <td class="lift-mid">1.11x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(43.0, 53.0]</td>
+                        <td>112</td>
+                        <td>9.8%</td>
+                        <td>57</td>
+                        <td>50.89%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(53.0, 69.6]</td>
+                        <td>112</td>
+                        <td>9.8%</td>
+                        <td>46</td>
+                        <td>41.07%</td>
+                        <td class="lift-low">0.81x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(69.6, 100.0]</td>
+                        <td>116</td>
+                        <td>10.1%</td>
+                        <td>61</td>
+                        <td>52.59%</td>
+                        <td class="lift-mid">1.03x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(100.0, 9857.0]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>61</td>
+                        <td>53.51%</td>
+                        <td class="lift-mid">1.05x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GD001 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GD002 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GD003 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GD004 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GD005 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GD006 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GD007 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZ001 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZ002 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZ003 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZ004 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZ005 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZ006 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZYQ001 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZYQ002 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZYQ003 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZYQ004 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZYQ005 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 GZYQ006 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 IP001 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>ID</td>
+                        <td>1,146</td>
+                        <td>100.0%</td>
+                        <td>582</td>
+                        <td>50.79%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 IP002 <span style="color: #666; font-size: 12px;">(离散取值, 共2个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,131</td>
+                        <td>98.5%</td>
+                        <td>578</td>
+                        <td>51.11%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>17</td>
+                        <td>1.5%</td>
+                        <td>6</td>
+                        <td>35.29%</td>
+                        <td class="lift-low">0.69x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 IZICardId <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>1,147</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.92%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 IZICardNameDiff <span style="color: #666; font-size: 12px;">(等频分箱, 共41个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(0.599, 0.967]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>66</td>
+                        <td>57.39%</td>
+                        <td class="lift-mid">1.13x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(0.967, 1.0]</td>
+                        <td>1,032</td>
+                        <td>90.0%</td>
+                        <td>518</td>
+                        <td>50.19%</td>
+                        <td class="lift-low">0.99x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 IZI_BLACK <span style="color: #666; font-size: 12px;">(离散取值, 共2个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>NEEDS_VERIFICATION</td>
+                        <td>4</td>
+                        <td>0.3%</td>
+                        <td>3</td>
+                        <td>75.00%</td>
+                        <td class="lift-mid">1.47x</td>
+                    </tr>
+
+                    <tr>
+                        <td>PASS</td>
+                        <td>1,144</td>
+                        <td>99.7%</td>
+                        <td>581</td>
+                        <td>50.79%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 IZI_Conwhatsapp <span style="color: #666; font-size: 12px;">(离散取值, 共4个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>126</td>
+                        <td>11.0%</td>
+                        <td>67</td>
+                        <td>53.17%</td>
+                        <td class="lift-mid">1.05x</td>
+                    </tr>
+
+                    <tr>
+                        <td>2.0</td>
+                        <td>361</td>
+                        <td>31.4%</td>
+                        <td>187</td>
+                        <td>51.80%</td>
+                        <td class="lift-mid">1.02x</td>
+                    </tr>
+
+                    <tr>
+                        <td>3.0</td>
+                        <td>453</td>
+                        <td>39.5%</td>
+                        <td>229</td>
+                        <td>50.55%</td>
+                        <td class="lift-low">0.99x</td>
+                    </tr>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>208</td>
+                        <td>18.1%</td>
+                        <td>101</td>
+                        <td>48.56%</td>
+                        <td class="lift-low">0.95x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 IZI_Credit <span style="color: #666; font-size: 12px;">(等频分箱, 共321个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(369.999, 492.0]</td>
+                        <td>117</td>
+                        <td>10.2%</td>
+                        <td>56</td>
+                        <td>47.86%</td>
+                        <td class="lift-low">0.94x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(492.0, 528.0]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>53</td>
+                        <td>46.49%</td>
+                        <td class="lift-low">0.91x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(528.0, 559.1]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>58</td>
+                        <td>50.88%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(559.1, 585.0]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>67</td>
+                        <td>58.26%</td>
+                        <td class="lift-mid">1.15x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(585.0, 610.0]</td>
+                        <td>117</td>
+                        <td>10.2%</td>
+                        <td>57</td>
+                        <td>48.72%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(610.0, 629.0]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>66</td>
+                        <td>57.39%</td>
+                        <td class="lift-mid">1.13x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(629.0, 652.0]</td>
+                        <td>117</td>
+                        <td>10.2%</td>
+                        <td>63</td>
+                        <td>53.85%</td>
+                        <td class="lift-mid">1.06x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(652.0, 677.0]</td>
+                        <td>111</td>
+                        <td>9.7%</td>
+                        <td>50</td>
+                        <td>45.05%</td>
+                        <td class="lift-low">0.89x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(677.0, 706.3]</td>
+                        <td>113</td>
+                        <td>9.8%</td>
+                        <td>55</td>
+                        <td>48.67%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(706.3, 781.0]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>59</td>
+                        <td>51.30%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 IZI_Fraud <span style="color: #666; font-size: 12px;">(等频分箱, 共75个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(9.999, 27.0]</td>
+                        <td>133</td>
+                        <td>11.6%</td>
+                        <td>65</td>
+                        <td>48.87%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(27.0, 33.0]</td>
+                        <td>103</td>
+                        <td>9.0%</td>
+                        <td>50</td>
+                        <td>48.54%</td>
+                        <td class="lift-low">0.95x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(33.0, 39.0]</td>
+                        <td>133</td>
+                        <td>11.6%</td>
+                        <td>72</td>
+                        <td>54.14%</td>
+                        <td class="lift-mid">1.06x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(39.0, 43.0]</td>
+                        <td>99</td>
+                        <td>8.6%</td>
+                        <td>51</td>
+                        <td>51.52%</td>
+                        <td class="lift-mid">1.01x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(43.0, 47.0]</td>
+                        <td>107</td>
+                        <td>9.3%</td>
+                        <td>66</td>
+                        <td>61.68%</td>
+                        <td class="lift-mid">1.21x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(47.0, 52.0]</td>
+                        <td>126</td>
+                        <td>11.0%</td>
+                        <td>57</td>
+                        <td>45.24%</td>
+                        <td class="lift-low">0.89x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(52.0, 57.0]</td>
+                        <td>118</td>
+                        <td>10.3%</td>
+                        <td>57</td>
+                        <td>48.31%</td>
+                        <td class="lift-low">0.95x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(57.0, 62.0]</td>
+                        <td>106</td>
+                        <td>9.2%</td>
+                        <td>50</td>
+                        <td>47.17%</td>
+                        <td class="lift-low">0.93x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(62.0, 68.0]</td>
+                        <td>109</td>
+                        <td>9.5%</td>
+                        <td>55</td>
+                        <td>50.46%</td>
+                        <td class="lift-low">0.99x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(68.0, 85.0]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>61</td>
+                        <td>53.51%</td>
+                        <td class="lift-mid">1.05x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 IZI_whatsapp <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 KYC001 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 KYC002 <span style="color: #666; font-size: 12px;">(等频分箱, 共814个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-9999.001, 78.504]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>58</td>
+                        <td>50.43%</td>
+                        <td class="lift-low">0.99x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(78.504, 80.974]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>57</td>
+                        <td>49.57%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(80.974, 82.792]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>56</td>
+                        <td>48.70%</td>
+                        <td class="lift-low">0.96x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(82.792, 84.118]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>56</td>
+                        <td>49.12%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(84.118, 85.45]</td>
+                        <td>117</td>
+                        <td>10.2%</td>
+                        <td>59</td>
+                        <td>50.43%</td>
+                        <td class="lift-low">0.99x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(85.45, 86.444]</td>
+                        <td>113</td>
+                        <td>9.8%</td>
+                        <td>54</td>
+                        <td>47.79%</td>
+                        <td class="lift-low">0.94x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(86.444, 87.35]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>67</td>
+                        <td>58.26%</td>
+                        <td class="lift-mid">1.15x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(87.35, 88.256]</td>
+                        <td>114</td>
+                        <td>9.9%</td>
+                        <td>53</td>
+                        <td>46.49%</td>
+                        <td class="lift-low">0.91x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(88.256, 89.466]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>67</td>
+                        <td>58.26%</td>
+                        <td class="lift-mid">1.15x</td>
+                    </tr>
+
+                    <tr>
+                        <td>(89.466, 93.27]</td>
+                        <td>115</td>
+                        <td>10.0%</td>
+                        <td>57</td>
+                        <td>49.57%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 KYC003 <span style="color: #666; font-size: 12px;">(等频分箱, 共12个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>分箱区间</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>(-1.001, 68.44]</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 KYC004 <span style="color: #666; font-size: 12px;">(离散取值, 共3个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>invalid card type</td>
+                        <td>6</td>
+                        <td>0.5%</td>
+                        <td>5</td>
+                        <td>83.33%</td>
+                        <td class="lift-high">1.64x</td>
+                    </tr>
+
+                    <tr>
+                        <td>KTP</td>
+                        <td>1,132</td>
+                        <td>98.6%</td>
+                        <td>575</td>
+                        <td>50.80%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>blurred image</td>
+                        <td>10</td>
+                        <td>0.9%</td>
+                        <td>4</td>
+                        <td>40.00%</td>
+                        <td class="lift-low">0.79x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 QD001 <span style="color: #666; font-size: 12px;">(离散取值, 共2个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>N</td>
+                        <td>324</td>
+                        <td>28.2%</td>
+                        <td>177</td>
+                        <td>54.63%</td>
+                        <td class="lift-mid">1.07x</td>
+                    </tr>
+
+                    <tr>
+                        <td>FB</td>
+                        <td>824</td>
+                        <td>71.8%</td>
+                        <td>407</td>
+                        <td>49.39%</td>
+                        <td class="lift-low">0.97x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZD013 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZD014 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZD015 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZD016 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZD017 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZD018 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZTCX_001 <span style="color: #666; font-size: 12px;">(离散取值, 共4个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>3.0</td>
+                        <td>8</td>
+                        <td>0.7%</td>
+                        <td>8</td>
+                        <td>100.00%</td>
+                        <td class="lift-high">1.97x</td>
+                    </tr>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>160</td>
+                        <td>13.9%</td>
+                        <td>89</td>
+                        <td>55.62%</td>
+                        <td class="lift-mid">1.09x</td>
+                    </tr>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>959</td>
+                        <td>83.5%</td>
+                        <td>477</td>
+                        <td>49.74%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                    <tr>
+                        <td>2.0</td>
+                        <td>21</td>
+                        <td>1.8%</td>
+                        <td>10</td>
+                        <td>47.62%</td>
+                        <td class="lift-low">0.94x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZTCX_002 <span style="color: #666; font-size: 12px;">(离散取值, 共2个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,144</td>
+                        <td>99.7%</td>
+                        <td>582</td>
+                        <td>50.87%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>4</td>
+                        <td>0.3%</td>
+                        <td>2</td>
+                        <td>50.00%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZTCX_003 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZTCX_004 <span style="color: #666; font-size: 12px;">(离散取值, 共2个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,144</td>
+                        <td>99.7%</td>
+                        <td>582</td>
+                        <td>50.87%</td>
+                        <td class="lift-mid">1.00x</td>
+                    </tr>
+
+                    <tr>
+                        <td>1.0</td>
+                        <td>4</td>
+                        <td>0.3%</td>
+                        <td>2</td>
+                        <td>50.00%</td>
+                        <td class="lift-low">0.98x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZTCX_005 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZTCX_006 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZTCX_007 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+        <div style="margin-bottom: 24px;">
+            <h4 style="margin-bottom: 12px;">📌 ZTCX_008 <span style="color: #666; font-size: 12px;">(离散取值, 共1个取值)</span></h4>
+            <table class="bin-table">
+                <thead>
+                    <tr>
+                        <th>取值</th>
+                        <th>样本数</th>
+                        <th>占比</th>
+                        <th>坏样本数</th>
+                        <th>逾期率</th>
+                        <th>Lift</th>
+                    </tr>
+                </thead>
+                <tbody>
+
+                    <tr>
+                        <td>0.0</td>
+                        <td>1,148</td>
+                        <td>100.0%</td>
+                        <td>584</td>
+                        <td>50.87%</td>
+                        <td class="lift-low">1.00x</td>
+                    </tr>
+
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+    
+    <!-- 命中分布 & 逾期分析 -->
+    <div class="grid-2">
+        <div class="section">
+            <div class="section-title">📈 命中次数分布</div>
+            <div class="chart-container">
+                <canvas id="chart-hit-dist"></canvas>
+            </div>
+            <div style="margin-top: 16px; padding: 12px; background: #f8f9fa; border-radius: 8px;">
+                <p><strong>平均命中规则数：</strong> {:.2f} 条</p>
+                <p><strong>最多命中数：</strong> {} 条</p>
+                <p><strong>零命中比例：</strong> {:.1f}%</p>
+            </div>
+        </div>
+        
+        <div class="section">
+            <div class="section-title">⚠️ 规则与逾期关系</div>
+            <div class="chart-container">
+                <canvas id="chart-overdue"></canvas>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 交叉分析 -->
+    <div class="section">
+        <div class="section-title">🔗 规则交叉分析</div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>规则组合</th>
+                    <th>同时命中数</th>
+                    <th>同时命中率</th>
+                    <th>两者都命中逾期率/Lift</th>
+                    <th>仅其一命中逾期率/Lift</th>
+                    <th>都不命中逾期率/Lift</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                <tr>
+                    <td>A001 ∩ A002</td>
+                    <td>222</td>
+                    <td>19.3%</td>
+                    <td>50.00% / 0.98x</td>
+                    <td>47.66% / 0.94x</td>
+                    <td>52.39% / 1.03x</td>
+                </tr>
+
+                <tr>
+                    <td>A001 ∩ A003</td>
+                    <td>372</td>
+                    <td>32.4%</td>
+                    <td>47.85% / 0.94x</td>
+                    <td>50.00% / 0.98x</td>
+                    <td>52.36% / 1.03x</td>
+                </tr>
+
+                <tr>
+                    <td>A001 ∩ A004</td>
+                    <td>83</td>
+                    <td>7.2%</td>
+                    <td>45.78% / 0.90x</td>
+                    <td>49.06% / 0.96x</td>
+                    <td>52.88% / 1.04x</td>
+                </tr>
+
+                <tr>
+                    <td>A001 ∩ A005</td>
+                    <td>557</td>
+                    <td>48.5%</td>
+                    <td>48.47% / 0.95x</td>
+                    <td>57.14% / 1.12x</td>
+                    <td>62.50% / 1.23x</td>
+                </tr>
+
+                <tr>
+                    <td>A001 ∩ A006</td>
+                    <td>564</td>
+                    <td>49.1%</td>
+                    <td>48.58% / 0.95x</td>
+                    <td>0.00% / 0.00x</td>
+                    <td>0.00% / 0.00x</td>
+                </tr>
+
+                <tr>
+                    <td>A001 ∩ A011</td>
+                    <td>83</td>
+                    <td>7.2%</td>
+                    <td>45.78% / 0.90x</td>
+                    <td>49.06% / 0.96x</td>
+                    <td>52.88% / 1.04x</td>
+                </tr>
+
+                <tr>
+                    <td>A001 ∩ A013</td>
+                    <td>283</td>
+                    <td>24.7%</td>
+                    <td>50.18% / 0.99x</td>
+                    <td>46.98% / 0.92x</td>
+                    <td>54.12% / 1.06x</td>
+                </tr>
+
+                <tr>
+                    <td>A001 ∩ A014</td>
+                    <td>243</td>
+                    <td>21.2%</td>
+                    <td>50.21% / 0.99x</td>
+                    <td>47.35% / 0.93x</td>
+                    <td>52.66% / 1.04x</td>
+                </tr>
+
+            </tbody>
+        </table>
+
+    </div>
+    
+    <!-- 串行策略模拟 -->
+    <div class="section">
+        <div class="section-title">🎯 串行策略模拟（规则 + 分数阈值）</div>
+
+        <div class="chart-container" style="height: 280px;">
+            <canvas id="chart-strategy"></canvas>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>分数分位</th>
+                    <th>阈值</th>
+                    <th>规则拒绝率</th>
+                    <th>分数拒绝率</th>
+                    <th>通过率</th>
+                    <th>通过样本数</th>
+                    <th>通过逾期率</th>
+                    <th>Lift</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                <tr>
+                    <td><strong>Q0.1</strong></td>
+                    <td>3.00</td>
+                    <td>100.0%</td>
+                    <td>9.3%</td>
+                    <td>0.0%</td>
+                    <td>0</td>
+                    <td>0.00%</td>
+                    <td style="color: #16a34a;"><strong>0.00x</strong></td>
+                </tr>
+
+                <tr>
+                    <td><strong>Q0.2</strong></td>
+                    <td>4.00</td>
+                    <td>100.0%</td>
+                    <td>16.6%</td>
+                    <td>0.0%</td>
+                    <td>0</td>
+                    <td>0.00%</td>
+                    <td style="color: #16a34a;"><strong>0.00x</strong></td>
+                </tr>
+
+                <tr>
+                    <td><strong>Q0.3</strong></td>
+                    <td>6.00</td>
+                    <td>100.0%</td>
+                    <td>29.9%</td>
+                    <td>0.0%</td>
+                    <td>0</td>
+                    <td>0.00%</td>
+                    <td style="color: #16a34a;"><strong>0.00x</strong></td>
+                </tr>
+
+                <tr>
+                    <td><strong>Q0.4</strong></td>
+                    <td>8.00</td>
+                    <td>100.0%</td>
+                    <td>39.8%</td>
+                    <td>0.0%</td>
+                    <td>0</td>
+                    <td>0.00%</td>
+                    <td style="color: #16a34a;"><strong>0.00x</strong></td>
+                </tr>
+
+                <tr>
+                    <td><strong>Q0.5</strong></td>
+                    <td>11.00</td>
+                    <td>100.0%</td>
+                    <td>49.5%</td>
+                    <td>0.0%</td>
+                    <td>0</td>
+                    <td>0.00%</td>
+                    <td style="color: #16a34a;"><strong>0.00x</strong></td>
+                </tr>
+
+            </tbody>
+        </table>
+
+    </div>
+    
+    <script>
+        // Chart.js 全局配置
+        Chart.defaults.font.family = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+        Chart.defaults.color = '#666';
+        
+        // 规则命中图
+        const interceptData = [564, 451, 765, 147, 1133, 1148, 147, 527, 451, 1148, 1148, 1148, 517, 0, 26, 0, 0, 0, 573, 520, 550, 251, 0, 0, 0, 3, 0, 0, 17, 0, 0, 1, 0, 1148, 493, 574, 0, 1148, 535, 0, 171, 571, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1146, 17, 0, 0, 1148, 453, 571, 573, 0, 0, 572, 11, 1148, 1148, 0, 0, 0, 0, 0, 0, 189, 4, 0, 4, 0, 0, 0, 0];
+        const interceptLabels = ['A001', 'A002', 'A003', 'A004', 'A005', 'A006', 'A011', 'A013', 'A014', 'APP001', 'APP002', 'APP003', 'APPLY_HOUR', 'BD002', 'BD003', 'BD004', 'BD005', 'BD006', 'BD_FACE_COMPARE_NONE', 'BD_LIVE', 'BJ_ModelScore', 'BJ_behavior', 'CTS002', 'CTS006', 'CTS007', 'CTS009', 'CTS012', 'CTS013', 'CTS014', 'CTS015', 'CTS016', 'CTS026', 'DEV001', 'DEV002', 'DEV004', 'DEV005', 'DEV009', 'DEV010', 'DEV_SensorNum', 'DEV_StorageCapacity', 'ECP001', 'ECP002', 'GD001', 'GD002', 'GD003', 'GD004', 'GD005', 'GD006', 'GD007', 'GZ001', 'GZ002', 'GZ003', 'GZ004', 'GZ005', 'GZ006', 'GZYQ001', 'GZYQ002', 'GZYQ003', 'GZYQ004', 'GZYQ005', 'GZYQ006', 'IP001', 'IP002', 'IZICardId', 'IZICardNameDiff', 'IZI_BLACK', 'IZI_Conwhatsapp', 'IZI_Credit', 'IZI_Fraud', 'IZI_whatsapp', 'KYC001', 'KYC002', 'KYC003', 'KYC004', 'QD001', 'ZD013', 'ZD014', 'ZD015', 'ZD016', 'ZD017', 'ZD018', 'ZTCX_001', 'ZTCX_002', 'ZTCX_003', 'ZTCX_004', 'ZTCX_005', 'ZTCX_006', 'ZTCX_007', 'ZTCX_008'];
+        new Chart(document.getElementById('chart-intercept'), {
+            type: 'bar',
+            data: {
+                labels: interceptLabels,
+                datasets: [{
+                    label: '命中数量',
+                    data: interceptData,
+                    backgroundColor: 'rgba(102, 126, 234, 0.7)',
+                    borderRadius: 6,
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+        
+        // 命中分布图
+        const hitDist = [1, 2, 11, 30, 56, 107, 139, 167, 169, 158, 136, 76, 45, 25, 19, 6, 1];
+        const hitLabels = ['12条', '13条', '14条', '15条', '16条', '17条', '18条', '19条', '20条', '21条', '22条', '23条', '24条', '25条', '26条', '27条', '28条'];
+        new Chart(document.getElementById('chart-hit-dist'), {
+            type: 'doughnut',
+            data: { labels: hitLabels, datasets: [{ data: hitDist, backgroundColor: ['#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe', '#00f2fe'] }] },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+        
+        // 逾期对比图
+        const overdueHitData = [50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 50.87108013937283, 0.0, 50.87108013937283, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 50.87108013937283, 0.0, 0.0, 50.87108013937283, 50.87108013937283, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 50.78534031413613, 100.0, 66.66666666666666, 35.294117647058826, 36.36363636363637, 61.53846153846154, 50.75022065313327, 54.76635514018692, 56.613756613756614, 48.58156028368794, 47.410358565737056, 48.86561954624782, 47.05882352941176, 48.90909090909091, 48.53801169590643, 52.09790209790209, 49.65156794425087, 52.03094777562862, 52.106430155210646, 51.88470066518847, 49.65986394557823, 49.65986394557823, 51.52129817444219, 51.31348511383538, 50.0, 50.0, 51.34615384615384, 50.55187637969095, 50.71895424836601, 50.96322241681261, 50.959860383944154, 50.853889943074];
+        const overdueNotHitData = [0.0, 0.0, 0.0, 0.0, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 0.0, 50.87108013937283, 0.0, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 0.0, 50.87108013937283, 50.87108013937283, 0.0, 0.0, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 50.87108013937283, 100.0, 50.828247602441145, 50.8296943231441, 51.105216622458, 51.01143359718557, 50.623885918003566, 60.0, 47.47145187601958, 49.739311783107404, 53.082191780821915, 51.83946488294314, 52.8695652173913, 50.92838196286472, 52.675585284280935, 51.27942681678608, 49.65277777777778, 52.09059233449478, 49.920760697305866, 50.07173601147776, 50.21520803443329, 51.048951048951054, 51.048951048951054, 50.38167938931297, 50.43327556325823, 50.87412587412587, 50.87412587412587, 50.477707006369435, 51.07913669064749, 51.174934725848566, 50.77989601386482, 50.78260869565218, 50.88566827697263];
+        const overdueLabels = ['A006', 'APP001', 'APP002', 'APP003', 'BD002', 'BD004', 'BD005', 'BD006', 'CTS002', 'CTS006', 'CTS007', 'CTS012', 'CTS013', 'CTS015', 'CTS016', 'DEV001', 'DEV002', 'DEV009', 'DEV010', 'DEV_StorageCapacity', 'GD001', 'GD002', 'GD003', 'GD004', 'GD005', 'GD006', 'GD007', 'GZ001', 'GZ002', 'GZ003', 'GZ004', 'GZ005', 'GZ006', 'GZYQ001', 'GZYQ002', 'GZYQ003', 'GZYQ004', 'GZYQ005', 'GZYQ006', 'IZICardId', 'IZICardNameDiff', 'IZI_BLACK', 'IZI_whatsapp', 'KYC001', 'KYC004', 'QD001', 'ZD013', 'ZD014', 'ZD015', 'ZD016', 'ZD017', 'ZD018', 'ZTCX_003', 'ZTCX_005', 'ZTCX_006', 'ZTCX_007', 'ZTCX_008', 'IP001', 'CTS026', 'CTS009', 'IP002', 'KYC003', 'BD003', 'A005', 'DEV_SensorNum', 'ZTCX_001', 'A001', 'BJ_behavior', 'IZI_Fraud', 'CTS014', 'BJ_ModelScore', 'ECP001', 'KYC002', 'DEV005', 'APPLY_HOUR', 'A002', 'A014', 'A004', 'A011', 'DEV004', 'IZI_Credit', 'ZTCX_002', 'ZTCX_004', 'BD_LIVE', 'IZI_Conwhatsapp', 'A003', 'ECP002', 'BD_FACE_COMPARE_NONE', 'A013'];
+        new Chart(document.getElementById('chart-overdue'), {
+            type: 'bar',
+            data: {
+                labels: overdueLabels,
+                datasets: [{
+                    label: '命中逾期率 (%)',
+                    data: overdueHitData,
+                    backgroundColor: 'rgba(220, 38, 38, 0.7)',
+                    borderRadius: 6,
+                }, {
+                    label: '未命中逾期率 (%)',
+                    data: overdueNotHitData,
+                    backgroundColor: 'rgba(75, 192, 192, 0.7)',
+                    borderRadius: 6,
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: true } } }
+        });
+        
+        // 串行策略图
+
+        new Chart(document.getElementById('chart-strategy'), {
+            type: 'line',
+            data: {
+                labels: ["Q{s['q']}", "Q{s['q']}", "Q{s['q']}", "Q{s['q']}", "Q{s['q']}"],
+                datasets: [{
+                    label: '通过率 (%)',
+                    data: [0.0, 0.0, 0.0, 0.0, 0.0],
+                    borderColor: 'rgba(22, 163, 74, 1)',
+                    backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                    tension: 0.4,
+                    yAxisID: 'y',
+                }, {
+                    label: '通过逾期率 (%)',
+                    data: [0.0, 0.0, 0.0, 0.0, 0.0],
+                    borderColor: 'rgba(220, 38, 38, 1)',
+                    backgroundColor: 'rgba(220, 38, 38, 0.1)',
+                    tension: 0.4,
+                    yAxisID: 'y1',
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    y: { type: 'linear', position: 'left', title: { display: true, text: '通过率' } },
+                    y1: { type: 'linear', position: 'right', title: { display: true, text: '逾期率' }, grid: { drawOnChartArea: false } }
+                }
+            }
+        });
+
+    </script>
+</body>
+</html>

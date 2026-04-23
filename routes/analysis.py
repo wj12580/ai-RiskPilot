@@ -34,6 +34,9 @@ from services.model_binning_service import (
 from services.model_correlation_service import (
     run_correlation_analysis, generate_correlation_html_report
 )
+from services.rules_analysis_service import (
+    run_rule_analysis, generate_rule_html_report
+)
 
 analysis_bp = Blueprint('analysis', __name__)
 
@@ -877,3 +880,212 @@ def export(task_id):
         download_name=f"分析报告_{task.file_name}_{task.id}.xlsx",
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# 规则分析 API
+# ════════════════════════════════════════════════════════════════════════════════
+
+@analysis_bp.route('/rule-analysis', methods=['POST'])
+def rule_analysis():
+    """
+    规则分析接口
+    
+    Body:
+        file_id, file_name, file_type,
+        target_col, rule_cols (list), score_col (optional),
+        biz_scenario, biz_country, biz_module
+    """
+    data = request.get_json()
+    file_id        = data.get('file_id')
+    file_name      = data.get('file_name', '')
+    file_type      = data.get('file_type', 'csv')
+    target_col     = data.get('target_col', '')
+    rule_cols      = data.get('rule_cols', [])
+    score_col      = data.get('score_col', '')
+    channel_col    = data.get('channel_col', '')
+    channel_values = data.get('channel_values', [])
+    biz_scenario   = data.get('biz_scenario', '')
+    biz_country    = data.get('biz_country', '')
+    biz_module     = data.get('biz_module', 'rule')
+
+    if not file_id or not target_col:
+        return jsonify({'error': '缺少必要参数（file_id / target_col）'}), 400
+    
+    if not rule_cols:
+        return jsonify({'error': '缺少规则列（rule_cols）'}), 400
+
+    file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], file_id)
+    if not os.path.exists(file_path):
+        return jsonify({'error': '文件不存在，请重新上传'}), 400
+
+    try:
+        # 读取数据
+        if file_type == 'csv':
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+
+        # 渠道筛选
+        filtered_note = ''
+        if channel_col and channel_values and channel_col in df.columns:
+            original_count = len(df)
+            df = df[df[channel_col].astype(str).isin(channel_values)]
+            filtered_count = len(df)
+            filtered_note = f' [渠道筛选: {channel_col}={channel_values}, 过滤 {original_count - filtered_count} 条, 剩余 {filtered_count} 条]'
+
+        # 验证规则列存在
+        valid_rule_cols = [c for c in rule_cols if c in df.columns]
+        if not valid_rule_cols:
+            return jsonify({'error': f'未找到有效的规则列'}), 400
+
+        # 验证目标列
+        if target_col not in df.columns:
+            return jsonify({'error': f'目标列 "{target_col}" 不存在'}), 400
+
+        # 获取分析日期
+        analysis_date = datetime.now().strftime('%Y-%m-%d %H:%M')
+
+        # 执行规则分析
+        rule_result = run_rule_analysis(
+            df=df,
+            rule_cols=valid_rule_cols,
+            target_col=target_col,
+            score_col=score_col if score_col and score_col in df.columns else None,
+        )
+
+        # 生成HTML报告
+        html_report = generate_rule_html_report(rule_result, analysis_date)
+
+        # 保存报告到文件
+        upload_folder = current_app.config['UPLOAD_FOLDER']
+        report_filename = f"rule_analysis_{file_id.replace('.', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}.html"
+        report_path = os.path.join(upload_folder, 'reports', report_filename)
+        os.makedirs(os.path.dirname(report_path), exist_ok=True)
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(html_report)
+
+        # 保存到数据库
+        task = AnalysisTask(
+            file_name     = file_name,
+            file_type     = file_type,
+            analysis_type = 'rule_analysis',
+            analysis_tags = 'rule',
+            feature_cols  = ','.join(valid_rule_cols),
+            target_col    = target_col,
+            score_col     = score_col,
+            n_bins        = 0,
+            user_note     = f"[规则分析] 规则数={len(valid_rule_cols)}{filtered_note}",
+            result_json   = json.dumps({
+                'analysis_type': 'rule_analysis',
+                'data_summary': rule_result.get('data_summary', {}),
+                'rule_count': len(valid_rule_cols),
+            }, ensure_ascii=False),
+            suggestion    = json.dumps({
+                'type': 'rule_analysis',
+                'report_path': report_path,
+                'charts': rule_result.get('charts', {}),
+                'summary_table': rule_result.get('summary_table', ''),
+            }, ensure_ascii=False),
+        )
+        db.session.add(task)
+        db.session.commit()
+
+        # 生成 LLM 动态策略建议（传入规则分析数据）
+        llm_suggestion = generate_llm_dynamic_suggestion(
+            analysis_data={
+                'rule_analysis': True,
+                'data_summary': rule_result.get('data_summary', {}),
+                'rule_binning': rule_result.get('rule_binning', {}),
+                'user_profile': rule_result.get('user_profile', {}),
+            },
+            biz_scenario=biz_scenario,
+            biz_country=biz_country,
+            biz_module=biz_module,
+        )
+        ai_suggestions = llm_suggestion.get('suggestions', [])
+
+        return jsonify({
+            'task_id': task.id,
+            'mode': 'rule_analysis',
+            'success': True,
+            'data_summary': rule_result.get('data_summary', {}),
+            'rule_binning': rule_result.get('rule_binning', {}),
+            'user_profile': rule_result.get('user_profile', {}),
+            'charts': rule_result.get('charts', {}),
+            'summary_table': rule_result.get('summary_table', ''),
+            'report_path': report_path,
+            'report_filename': report_filename,
+            'html_report': html_report,
+            'report_html': html_report,
+            'ai_suggestion': ai_suggestions,
+            'ai_suggestion_source': llm_suggestion.get('source', 'fallback'),
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'规则分析失败：{str(e)}'}), 500
+
+
+@analysis_bp.route('/rule-columns', methods=['POST'])
+def get_rule_columns():
+    """
+    获取可用于分析的规则列
+    Body: file_id, file_type
+    """
+    data = request.get_json()
+    file_id = data.get('file_id')
+    file_type = data.get('file_type', 'csv')
+    
+    if not file_id:
+        return jsonify({'error': '缺少 file_id'}), 400
+    
+    file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], file_id)
+    if not os.path.exists(file_path):
+        return jsonify({'error': '文件不存在'}), 400
+    
+    try:
+        if file_type == 'csv':
+            df = pd.read_csv(file_path, nrows=100)
+        else:
+            df = pd.read_excel(file_path, nrows=100)
+        
+        # 自动识别规则列：排除目标列、ID列，保留数值型或标准标记型的列
+        exclude_patterns = ['label', 'target', 'overdue', 'y', 'flag', 'id', 'customer', 'date', 'time', 'score', 'predict', 'prob']
+        
+        rule_candidates = []
+        for col in df.columns:
+            col_lower = col.lower()
+            if any(p in col_lower for p in exclude_patterns):
+                continue
+            
+            # 检查是否是规则候选列
+            if df[col].dtype in ['int64', 'float64']:
+                # 数值型列可能是规则分数或分数阈值
+                unique_ratio = df[col].nunique() / len(df)
+                if unique_ratio > 0.01:  # 至少有1%的不同值
+                    rule_candidates.append({
+                        'name': col,
+                        'type': 'numeric',
+                        'unique_count': df[col].nunique(),
+                        'sample_values': df[col].dropna().head(5).tolist(),
+                    })
+            elif df[col].dtype == 'object' or df[col].dtype == 'bool':
+                # 标记型列可能是命中标记
+                unique_vals = df[col].dropna().unique()
+                unique_set = set(str(v) for v in unique_vals)
+                if unique_set.issubset({'0', '1', 'True', 'False', 'true', 'false', 'yes', 'no', 'Y', 'N'}):
+                    rule_candidates.append({
+                        'name': col,
+                        'type': 'flag',
+                        'unique_values': list(unique_set),
+                    })
+        
+        return jsonify({
+            'rule_candidates': rule_candidates,
+            'all_columns': list(df.columns),
+        })
+    
+    except Exception as e:
+        return jsonify({'error': f'读取文件失败：{str(e)}'}), 500

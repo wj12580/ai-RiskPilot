@@ -53,6 +53,20 @@ async function loadGlobalStats() {
   }
 }
 
+// ── 分析模块切换 ───────────────────────────────────────────────────────────
+function onBizModuleChange() {
+  const bizModule = document.getElementById('biz-module')?.value || '';
+  const ruleHint = document.getElementById('rule-analysis-hint');
+  
+  if (ruleHint) {
+    if (bizModule === 'rule') {
+      ruleHint.classList.remove('hidden');
+    } else {
+      ruleHint.classList.add('hidden');
+    }
+  }
+}
+
 // ── 导航 ────────────────────────────────────────────────────────────────────
 function initNavigation() {
   const navItems = document.querySelectorAll('.nav-item');
@@ -497,10 +511,14 @@ async function runAnalysis() {
   // ── 判断走哪个路由 ───────────────────────────────────────────────────────
   const bizModule = document.getElementById('biz-module')?.value || '';
   const isMultiModel = Array.isArray(featureCols) && featureCols.length >= 2;
+  const isRuleAnalysis = bizModule === 'rule';
   
   // 根据业务模块和模型数量决定调用哪个接口
   let apiEndpoint;
-  if (bizModule === 'model') {
+  if (isRuleAnalysis) {
+    // 规则分析模块
+    apiEndpoint = `${API_BASE}/analysis/rule-analysis`;
+  } else if (bizModule === 'model') {
     // 模型分析模块
     if (isMultiModel) {
       // 多模型 → 相关性分析
@@ -520,6 +538,8 @@ async function runAnalysis() {
     showLoading(`正在对 ${featureCols.length} 个模型进行综合分析...\n相关性热力图 · 聚类分析 · 互补性矩阵 · 串行策略模拟\n（约15-60秒，请耐心等待）`);
   } else if (bizModule === 'model') {
     showLoading(`正在进行模型分箱分析...\n等频分箱 · KS/AUC计算 · Lift分析\n（约5-15秒，请耐心等待）`);
+  } else if (isRuleAnalysis) {
+    showLoading(`正在进行规则分析...\n拦截效果 · 命中分布 · 交叉分析 · 逾期关系\n（约5-15秒，请耐心等待）`);
   }
 
   try {
@@ -530,8 +550,8 @@ async function runAnalysis() {
     // 获取业务场景参数
     const bizScenario = document.getElementById('biz-scenario')?.value || '';
     const bizCountry = document.getElementById('biz-country')?.value || '';
-    const bizModule = document.getElementById('biz-module')?.value || '';
     
+    // 构建请求 payload
     const payload = {
       file_id: currentState.uploadedFile.file_id,
       file_name: currentState.uploadedFile.file_name,
@@ -552,6 +572,11 @@ async function runAnalysis() {
       channel_col: channelCol,
       channel_values: channelValues,
     };
+    
+    // 规则分析需要额外的 rule_cols 参数
+    if (isRuleAnalysis) {
+      payload.rule_cols = featureCols;
+    }
 
     const res = await fetch(apiEndpoint, {
       method: 'POST',
@@ -571,7 +596,10 @@ async function runAnalysis() {
     currentState.analysisResult._analysisTags = analysisTags;
 
     // ── 根据分析模式渲染 ────────────────────────────────────────────────
-    if (data.mode === 'model_binning' || data.mode === 'model_correlation') {
+    if (data.mode === 'rule_analysis') {
+      // 规则分析模块：使用 iframe 展示规则分析报告
+      displayRuleReportResults(data);
+    } else if (data.mode === 'model_binning' || data.mode === 'model_correlation') {
       // 模型分析模块：使用新的报告 iframe 展示
       displayModelReportResults(data);
     } else if (data.mode === 'expert_analysis') {
@@ -664,6 +692,227 @@ function displayModelReportResults(data) {
       downloadModelReport(data);
     };
   }
+}
+
+// ── 规则分析报告结果展示（iframe嵌入完整HTML报告）───────────────────────
+function displayRuleReportResults(data) {
+  // 显示结果区域
+  document.getElementById('analysis-result').classList.remove('hidden');
+
+  // 隐藏 legacy 容器（原有指标卡片、分箱、相关性视图）
+  document.getElementById('result-legacy-container').classList.add('hidden');
+  // 隐藏旧的各卡片
+  document.getElementById('result-bins-card').classList.add('hidden');
+  document.getElementById('result-multi-model-card').classList.add('hidden');
+  document.getElementById('result-model-binning-card').classList.add('hidden');
+  document.getElementById('result-model-correlation-card').classList.add('hidden');
+  document.getElementById('result-model-report-card').classList.add('hidden');
+
+  // 显示规则报告卡片
+  document.getElementById('result-rule-report-card').classList.remove('hidden');
+
+  // 填充元数据
+  const metaEl = document.getElementById('rule-report-meta');
+  if (metaEl) {
+    const summary = data.data_summary || {};
+    const ruleCount = (data.intercept_analysis || []).length;
+    const sampleInfo = summary.total_samples
+      ? `样本量：${summary.total_samples.toLocaleString()} | 逾期率：${((summary.overall_bad_rate || 0) * 100).toFixed(1)}% | 规则数量：${ruleCount} 个`
+      : `规则数量：${ruleCount} 个`;
+    metaEl.textContent = sampleInfo;
+  }
+
+  // 嵌入报告HTML（后端返回字段名为 html_report）
+  const frame = document.getElementById('rule-report-frame');
+  const reportHtml = data.html_report || data.report_html || '';
+  if (frame && reportHtml) {
+    frame.srcdoc = reportHtml;
+    // 自动调整 iframe 高度
+    frame.onload = function() {
+      try {
+        const contentHeight = frame.contentDocument.documentElement.scrollHeight;
+        frame.style.height = Math.max(contentHeight + 40, 800) + 'px';
+      } catch(e) {
+        // 跨域限制，设置默认高度
+        frame.style.height = '1200px';
+      }
+    };
+  } else if (frame && data.report_url) {
+    frame.src = data.report_url;
+  }
+
+  // 保存数据供下载使用
+  currentState.lastTaskId = data.task_id;
+  currentState.reportFilename = data.report_filename || '';
+  currentState.reportHtml = reportHtml;
+
+  // AI 策略建议
+  const suggestionsCard = document.getElementById('suggestions-card');
+  if (suggestionsCard) {
+    suggestionsCard.classList.remove('hidden');
+  }
+
+  // 渲染 AI 策略建议
+  let suggestions = data.ai_suggestion;
+  let suggestionSource = data.ai_suggestion_source || '';
+  if (!suggestions || suggestions.length === 0) {
+    suggestions = generateRuleSuggestions(data);
+    suggestionSource = '';
+  }
+  renderSuggestions(suggestions, suggestionSource);
+
+  // 下载按钮事件
+  const downloadBtn = document.getElementById('btn-download-rule-report');
+  if (downloadBtn) {
+    downloadBtn.onclick = function() {
+      downloadRuleReport(data);
+    };
+  }
+}
+
+// 下载规则分析报告
+function downloadRuleReport(data) {
+  const html = data.report_html || currentState.reportHtml || '';
+  if (!html) {
+    showToast('报告内容为空，无法下载', 'error');
+    return;
+  }
+
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = data.report_filename || `规则分析报告_${new Date().toISOString().slice(0,10)}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── 规则分析兜底建议生成（规则引擎）────────────────────────────────────
+function generateRuleSuggestions(data) {
+  const suggestions = [];
+  
+  const intercept = data.intercept_analysis || [];
+  const overdue = data.overdue_analysis || [];
+  const serial = data.serial_strategy || [];
+  const hitDist = data.hit_distribution || {};
+  
+  // 1. 规则拦截效果建议
+  if (intercept.length > 0) {
+    const highReject = intercept.filter(r => r.reject_rate > 0.3);
+    const lowReject = intercept.filter(r => r.reject_rate < 0.05);
+    
+    if (highReject.length > 0) {
+      suggestions.push({
+        type: 'warning',
+        title: '🚨 高拦截率规则警告',
+        content: `以下规则拦截率过高（>30%）：${highReject.map(r => `${r.rule_name}(${(r.reject_rate*100).toFixed(1)}%)`).join('、')}。过高的拦截率可能导致优质客户流失。`,
+        details: '建议调整拦截阈值或增加二次审核机制'
+      });
+    }
+    
+    if (lowReject.length > 0) {
+      suggestions.push({
+        type: 'info',
+        title: '⚠️ 低拦截率规则关注',
+        content: `以下规则拦截率过低（<5%）：${lowReject.map(r => `${r.rule_name}(${(r.reject_rate*100).toFixed(1)}%)`).join('、')}。可能存在规则失效或阈值设置不当的问题。`,
+        details: '建议检查规则逻辑和阈值设置'
+      });
+    }
+  }
+  
+  // 2. 规则与逾期关系建议
+  if (overdue.length > 0) {
+    const sorted = [...overdue].sort((a, b) => b.hit_bad_rate - a.hit_bad_rate);
+    const topRisky = sorted.slice(0, 3);
+    
+    if (topRisky[0]) {
+      const lift = topRisky[0].hit_lift || 0;
+      const liftColor = lift > 2 ? 'danger' : lift > 1.5 ? 'warning' : 'info';
+      suggestions.push({
+        type: liftColor,
+        title: `📊 最高风险规则：${topRisky[0].rule_name}`,
+        content: `命中该规则的客户逾期率达 ${(topRisky[0].hit_bad_rate*100).toFixed(2)}%，是整体的 ${lift.toFixed(2)}x。拦截效果显著。`,
+        details: '建议保持该规则的拦截策略，并持续监控'
+      });
+    }
+    
+    // 找出逾期率反而更低的规则（可能是反向指标）
+    const lowRisk = sorted.filter(r => r.hit_lift < 0.8);
+    if (lowRisk.length > 0) {
+      suggestions.push({
+        type: 'strategy',
+        title: '🔄 反向指标规则',
+        content: `以下规则命中后逾期率反而更低：${lowRisk.slice(0, 3).map(r => `${r.rule_name}(逾期率${(r.hit_bad_rate*100).toFixed(2)}%)`).join('、')}。可能是有效的"白名单"规则。`,
+        details: '建议考虑将这些条件作为加分项或白名单'
+      });
+    }
+  }
+  
+  // 3. 命中次数分布建议
+  if (hitDist.avg_hits > 0) {
+    if (hitDist.zero_hit_rate < 0.5) {
+      suggestions.push({
+        type: 'warning',
+        title: '⚠️ 多规则交叉拦截过多',
+        content: `平均每条数据命中 ${hitDist.avg_hits.toFixed(1)} 条规则，仅 ${(hitDist.zero_hit_rate*100).toFixed(1)}% 的客户零规则命中。过多的拦截可能导致拒客率过高。`,
+        details: '建议优化规则组合，减少冗余规则'
+      });
+    }
+  }
+  
+  // 4. 串行策略建议
+  if (serial.length > 0) {
+    // 找到平衡点（通过率适中且逾期可控）
+    const optimal = serial.find(s => s.pass_rate > 0.3 && s.pass_rate < 0.7 && s.pass_bad_rate < 0.5);
+    if (optimal) {
+      suggestions.push({
+        type: 'strategy',
+        title: '🎯 推荐串行策略阈值',
+        content: `建议采用 Q=${optimal.q}（阈值 ${optimal.threshold.toFixed(2)}），可获得 ${(optimal.pass_rate*100).toFixed(1)}% 的通过率和 ${(optimal.pass_bad_rate*100).toFixed(2)}% 的通过逾期率。`,
+        details: `Lift: ${optimal.lift.toFixed(2)}x | 预计通过人数: ${optimal.pass_count.toLocaleString()}`
+      });
+    }
+  }
+  
+  // 5. 规则优化建议
+  if (intercept.length >= 3) {
+    suggestions.push({
+      type: 'strategy',
+      title: '📋 规则组合优化建议',
+      content: `当前共有 ${intercept.length} 条规则参与决策。建议定期进行规则有效性评估，移除低效规则，保留高效拦截规则。`,
+      details: '可使用A/B测试验证规则效果'
+    });
+  }
+  
+  // 6. 欺诈检测建议
+  suggestions.push({
+    type: 'strategy',
+    title: '🔍 欺诈风险规则建议',
+    content: '对于高APR产品，欺诈风险是重要考量。建议增加：① 设备指纹识别规则；② 多头借贷检测规则；③ 欺诈名单实时查询。',
+    details: '欺诈客户通常伪装良好，需多维度验证'
+  });
+  
+  // 7. 差异化策略建议
+  suggestions.push({
+    type: 'strategy',
+    title: '💰 差异化定价策略',
+    content: '基于规则分析结果，建议对不同风险等级的客户采用差异化定价：高风险客户适用高利率覆盖风险，低风险优质客户可给予优惠提升忠诚度。',
+    details: '结合分数和规则结果综合定价'
+  });
+  
+  // 确保至少6条建议（只添加一条，不重复）
+  if (suggestions.length < 6) {
+    suggestions.push({
+      type: 'info',
+      title: '📈 持续监控建议',
+      content: '建议持续监控各项规则的拦截效果，定期（建议每周/每月）复盘规则表现，及时调整失效规则。',
+      details: '规则需要动态优化以适应市场变化'
+    });
+  }
+  
+  return suggestions.slice(0, 10);
 }
 
 // 下载模型分析报告

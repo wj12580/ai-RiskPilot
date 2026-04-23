@@ -169,7 +169,7 @@
                 </div>
                 <div class="form-group">
                   <label class="form-label">分析模块</label>
-                  <select id="biz-module" class="form-select">
+                  <select id="biz-module" class="form-select" onchange="onBizModuleChange()">
                     <option value="">全部模块</option>
                     <option value="model">🤖 模型分析</option>
                     <option value="rule">📋 规则分析</option>
@@ -235,6 +235,16 @@
                   <div id="feature-selected-count" class="selected-count-hint"></div>
                 </div>
               </div>
+              
+              <!-- 规则分析说明（默认隐藏，选择规则分析模块时显示） -->
+              <div id="rule-analysis-hint" class="hidden" style="margin-top:12px;padding:12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;font-size:0.9rem;">
+                <strong>📋 规则分析说明：</strong>
+                <ul style="margin:8px 0 0 20px;padding:0;">
+                  <li>请在上方"分析特征列"中选择要分析的规则列（可多选）</li>
+                  <li>规则列可以是：规则命中标记（0/1）、规则分数、或其他规则相关字段</li>
+                  <li>系统会自动分析规则的拦截效果、命中分布、交叉分析、与逾期关系</li>
+                </ul>
+              </div>
             </div>
 
             <!-- 补充说明 -->
@@ -267,6 +277,22 @@
             </div>
             <div class="card-body" style="padding:0;overflow:hidden;border-radius:0 0 12px 12px;">
               <iframe id="model-report-frame"
+                style="width:100%;border:none;min-height:800px;background:#f0f4f8;"
+                sandbox="allow-scripts allow-same-origin"></iframe>
+            </div>
+          </div>
+
+          <!-- ═══ 规则分析专用报告容器（选择"规则分析"模块时显示）═══ -->
+          <div class="card hidden" id="result-rule-report-card">
+            <div class="card-header">
+              <h3 class="card-title">📋 规则分析报告</h3>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <div style="font-size:0.8rem;color:#6b7280;" id="rule-report-meta"></div>
+                <button class="btn btn-sm btn-secondary" id="btn-download-rule-report" title="下载报告">📥 下载HTML报告</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding:0;overflow:hidden;border-radius:0 0 12px 12px;">
+              <iframe id="rule-report-frame"
                 style="width:100%;border:none;min-height:800px;background:#f0f4f8;"
                 sandbox="allow-scripts allow-same-origin"></iframe>
             </div>

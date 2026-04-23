@@ -58,7 +58,15 @@ _STRATEGY_SYSTEM_PROMPT = """你是一位资深的海外信贷风控策略专家
 - 高APR定价策略：APR 800%+
 - 多模型组合：串行/捞回策略
 - 逾期容忍上限：50%
-- 重点关注：欺诈检测、信用评估、分箱优化、阈值设定"""
+- 重点关注：欺诈检测、信用评估、分箱优化、阈值设定、规则拦截效果
+
+【规则分析专项】
+当分析数据包含规则相关内容时（拦截率、命中分布、交叉分析等），重点关注：
+- 高拦截率规则的合理性，是否会误杀优质客户
+- 规则命中后的逾期率（Lift），评估规则有效性
+- 规则之间的冗余性，避免重复拦截
+- 规则与分数的串行策略最优阈值选择
+- 欺诈检测规则的特殊设计"""
 
 
 def generate_llm_dynamic_suggestion(
@@ -274,6 +282,88 @@ def _build_data_prompt(
                 )
             sections.append('\n'.join(lines))
 
+    # ── 规则分析数据 ──
+    rule_binning = analysis_data.get('rule_binning', {})
+    user_profile = analysis_data.get('user_profile', {})
+    is_rule_analysis = analysis_data.get('rule_analysis', False)
+    
+    if is_rule_analysis or rule_binning:
+        # 规则分箱分析（取值-首逾-Lift）
+        if rule_binning:
+            lines = ['## 规则分箱分析（取值-样本-逾期率-Lift）']
+            for rule_name, bin_data in rule_binning.items():
+                bin_type = '等频分箱' if bin_data.get('bin_type') == 'continuous' else '离散取值'
+                unique_count = bin_data.get('unique_count', 0)
+                lines.append(f'### {rule_name} (共{unique_count}个取值, {bin_type})')
+                bins = bin_data.get('bins', [])
+                for b in bins[:15]:  # 最多15行
+                    if bin_data.get('bin_type') == 'continuous':
+                        label = b.get('bin_range', '')
+                    else:
+                        label = b.get('value', '')
+                    lines.append(
+                        f"- {label}: "
+                        f"样本={b.get('count', 0):,}, "
+                        f"逾期率={b.get('bad_rate', 0)*100:.2f}%, "
+                        f"Lift={b.get('lift', 0):.2f}"
+                    )
+            sections.append('\n'.join(lines))
+        
+        # 用户画像分析（好/坏用户群体）
+        if user_profile:
+            overall_bad = user_profile.get('overall_bad_rate', 0)
+            lines = [f'## 用户画像分析（整体逾期率: {overall_bad*100:.2f}%）']
+            
+            # 好用户群体
+            good_rules = user_profile.get('good_rules', [])
+            if good_rules:
+                lines.append('### 好用户群体（逾期率低于整体70%）')
+                for r in good_rules[:8]:
+                    lines.append(
+                        f"- {r['rule']}={r['value']}: "
+                        f"样本={r['sample_count']:,}, "
+                        f"逾期率={r['bad_rate']*100:.2f}%, "
+                        f"Lift={r['lift']:.2f}"
+                    )
+            
+            # 坏用户群体
+            bad_rules = user_profile.get('bad_rules', [])
+            if bad_rules:
+                lines.append('### 坏用户群体（逾期率高于整体150%）')
+                for r in bad_rules[:8]:
+                    lines.append(
+                        f"- {r['rule']}={r['value']}: "
+                        f"样本={r['sample_count']:,}, "
+                        f"逾期率={r['bad_rate']*100:.2f}%, "
+                        f"Lift={r['lift']:.2f}"
+                    )
+            
+            # 好用户组合
+            good_combos = user_profile.get('good_combinations', [])
+            if good_combos:
+                lines.append('### 好用户组合')
+                for c in good_combos[:5]:
+                    lines.append(
+                        f"- {c['combo']}: "
+                        f"样本={c['sample_count']:,}, "
+                        f"逾期率={c['bad_rate']*100:.2f}%, "
+                        f"Lift={c['lift']:.2f}"
+                    )
+            
+            # 坏用户组合
+            bad_combos = user_profile.get('bad_combinations', [])
+            if bad_combos:
+                lines.append('### 坏用户组合')
+                for c in bad_combos[:5]:
+                    lines.append(
+                        f"- {c['combo']}: "
+                        f"样本={c['sample_count']:,}, "
+                        f"逾期率={c['bad_rate']*100:.2f}%, "
+                        f"Lift={c['lift']:.2f}"
+                    )
+            
+            sections.append('\n'.join(lines))
+    
     # ── 分箱数据 ──
     all_results = analysis_data.get('all_results', [])
     if all_results and len(all_results) > 0:
@@ -350,6 +440,8 @@ def _parse_llm_suggestions(raw: str) -> List[Dict]:
             'details': details,
         })
 
+    # 去重
+    suggestions = _deduplicate_suggestions(suggestions)
     return suggestions
 
 
@@ -392,7 +484,105 @@ def _extract_suggestions_from_text(text: str) -> List[Dict]:
                 'details': '',
             })
 
+    # 去重
+    suggestions = _deduplicate_suggestions(suggestions)
     return suggestions[:10]  # 最多 10 条
+
+
+def _deduplicate_suggestions(suggestions: List[Dict]) -> List[Dict]:
+    """
+    建议去重
+    基于 title 和 content 的相似度进行去重
+    """
+    import re
+    
+    if not suggestions:
+        return []
+    
+    seen_titles = []
+    seen_title_norms = []
+    result = []
+    
+    for s in suggestions:
+        title = s.get('title', '')
+        content = s.get('content', '')
+        
+        # 标题归一化：去掉emoji、前后空格、转小写
+        title_normalized = _normalize_text(title)
+        
+        # 检查是否与已有标题相似
+        is_duplicate = False
+        
+        # 1. 精确匹配
+        if title_normalized in [n for n, _ in seen_title_norms]:
+            is_duplicate = True
+        
+        # 2. 检查核心关键词是否相同（去掉"建议"、"策略"等修饰词）
+        if not is_duplicate:
+            # 提取核心关键词
+            core_words = _extract_core_keywords(title_normalized)
+            for _, existing_cores in seen_title_norms:
+                if core_words and existing_cores:
+                    # 核心词完全相同
+                    if core_words == existing_cores:
+                        is_duplicate = True
+                        break
+                    # 核心词重叠超过60%
+                    overlap = len(core_words & existing_cores) / max(len(core_words), len(existing_cores))
+                    if overlap >= 0.6:
+                        is_duplicate = True
+                        break
+        
+        # 3. 内容相似度检查（更严格）
+        if not is_duplicate and content:
+            content_normalized = _normalize_text(content)
+            # 取核心内容（前150字符去掉标点后的内容）
+            content_core = re.sub(r'[^\w\u4e00-\u9fff]', '', content_normalized)[:150]
+            for existing in result:
+                existing_content = existing.get('content', '')
+                existing_core = re.sub(r'[^\w\u4e00-\u9fff]', '', _normalize_text(existing_content))[:150]
+                # 内容核心部分相同超过80个字符
+                if len(content_core) > 20 and len(existing_core) > 20:
+                    if content_core in existing_core or existing_core in content_core:
+                        is_duplicate = True
+                        break
+        
+        if not is_duplicate:
+            core_words = _extract_core_keywords(title_normalized)
+            seen_title_norms.append((title_normalized, core_words))
+            result.append(s)
+    
+    return result
+
+
+def _extract_core_keywords(title_normalized: str) -> set:
+    """提取标题的核心关键词（去掉常见修饰词）"""
+    # 常见修饰词
+    stop_words = {
+        '建议', '策略', '分析', '优化', '调整', '建议对', '建议对进行',
+        '持续', '监控', '建议定期', '定期', '每周', '每月',
+        '对于', '基于', '根据', '结合', '通过',
+        '1', '2', '3', '4', '5', '一', '二', '三', '四', '五',
+        '的', '了', '和', '与', '或', '等', '各', '该',
+        '进行', '开展', '实施', '执行', '落实',
+    }
+    words = set(title_normalized.split())
+    core = words - stop_words
+    return core if core else words
+
+
+def _normalize_text(text: str) -> str:
+    """归一化文本用于比较"""
+    import re
+    # 去掉emoji
+    text = re.sub(r'[\U00010000-\U0010ffff]', '', text)
+    # 去掉特殊符号
+    text = re.sub(r'[📊📈🚨⚠️✅🎯💡📌🚀🔥⚡🎉🏆🔍💰📋⚖️✨🎯👥📱🔧📉⚡]', '', text)
+    # 转小写，去前后空格
+    text = text.lower().strip()
+    # 多个空格变一个
+    text = re.sub(r'\s+', ' ', text)
+    return text
 
 
 # ════════════════════════════════════════════════════════════════════════════════
