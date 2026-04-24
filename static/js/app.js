@@ -65,9 +65,10 @@ function onBizModuleChange() {
       ruleHint.classList.add('hidden');
     }
   }
+
+  applyDefaultAnalysisTagsByModule(bizModule);
 }
 
-// ── 导航 ────────────────────────────────────────────────────────────────────
 function initNavigation() {
   const navItems = document.querySelectorAll('.nav-item');
   navItems.forEach(item => {
@@ -115,17 +116,14 @@ function initAnalysisPage() {
   const uploadArea = document.getElementById('upload-area');
   const fileInput = document.getElementById('file-input');
   
-  // 点击上传
   uploadArea.addEventListener('click', () => fileInput.click());
   
-  // 文件选择
   fileInput.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
       handleFileUpload(e.target.files[0]);
     }
   });
   
-  // 拖拽上传
   uploadArea.addEventListener('dragover', (e) => {
     e.preventDefault();
     uploadArea.classList.add('dragover');
@@ -143,14 +141,11 @@ function initAnalysisPage() {
     }
   });
   
-  // 运行分析
   document.getElementById('btn-run-analysis').addEventListener('click', runAnalysis);
-  
-  // 导出报告
   document.getElementById('btn-export-report').addEventListener('click', exportReport);
-  
-  // 保存到记录
   document.getElementById('btn-save-record').addEventListener('click', saveToRecord);
+
+  applyDefaultAnalysisTagsByModule(document.getElementById('biz-module')?.value || '');
 }
 
 async function handleFileUpload(file) {
@@ -208,42 +203,38 @@ function showFileInfo(info) {
 function populateColumnSelects(columns) {
   const targetSelect = document.getElementById('target-col');
 
-  targetSelect.innerHTML = '<option value="">请选择...</option>';
+  targetSelect.innerHTML = '<option value="">请选择</option>';
 
   columns.forEach(col => {
     const opt1 = new Option(col, col);
     targetSelect.add(opt1);
   });
-  
-  // 智能识别常见列名
-  const overduePatterns = /overdue|逾期|bad|default|target|y$/i;
-  
-  columns.forEach(col => {
-    if (overduePatterns.test(col)) targetSelect.value = col;
-  });
 
-  // 渲染特征列多选区域
+  const exactLabel = (columns || []).find(col => String(col).toLowerCase() === 'label');
+  targetSelect.value = exactLabel || '';
+
   renderFeatureCols(columns);
 }
 
 function populateChannelColSelect(columns) {
   const channelColSelect = document.getElementById('channel-col-select');
-  
-  // 智能识别渠道相关的列名
-  const channelPatterns = /channel|渠道|src|source|入口|terminal/i;
-  
-  channelColSelect.innerHTML = '<option value="">-- 先选择渠道字段 --</option>';
-  
+
+  channelColSelect.innerHTML = '<option value="">选择渠道字段</option>';
+
   columns.forEach(col => {
     const opt = new Option(col, col);
     channelColSelect.add(opt);
-    // 自动选中看起来像渠道的列
-    if (channelPatterns.test(col)) {
-      channelColSelect.value = col;
-      // 触发加载渠道值
-      onChannelColChange();
-    }
   });
+
+  const defaultChannelCol =
+    (columns || []).find(col => col === '渠道') ||
+    (columns || []).find(col => col === '渠道组') ||
+    (columns || []).find(col => String(col).toLowerCase() === 'channel');
+
+  if (defaultChannelCol) {
+    channelColSelect.value = defaultChannelCol;
+    onChannelColChange();
+  }
 }
 
 async function onChannelColChange() {
@@ -380,27 +371,35 @@ function renderFeatureCols(columns) {
     return;
   }
 
-  // 排除目标列和明显非特征列
   const targetCol = document.getElementById('target-col').value;
   const excludePatterns = /^(id|user_id|loan_id|apply_id|created_at|updated_at)$/i;
+  const excludedFields = new Set([
+    'product', '渠道', '渠道组', 'order_id', 'customer_id',
+    '时间', 'label', 'apply_time', 'apply_date'
+  ].map(v => String(v).toLowerCase()));
+  const filteredColumns = (columns || []).filter(col => {
+    const normalized = String(col).toLowerCase();
+    if (normalized === String(targetCol || '').toLowerCase()) return false;
+    if (excludedFields.has(normalized)) return false;
+    if (excludePatterns.test(col)) return false;
+    return true;
+  });
 
   container.innerHTML = '';
 
-  // 全选行
   const allRow = document.createElement('div');
   allRow.className = 'feature-select-all-row';
   allRow.innerHTML = `
     <input type="checkbox" id="feature-select-all" onchange="toggleAllFeatureCols(this.checked)">
     <label for="feature-select-all">全部选择</label>
-    <span style="font-size:0.8rem;color:#6b7280;margin-left:8px;">共 ${columns.length} 列</span>
+    <span style="font-size:0.8rem;color:#6b7280;margin-left:8px;">共${filteredColumns.length} 列</span>
   `;
   container.appendChild(allRow);
 
-  // 列表格
   const grid = document.createElement('div');
   grid.className = 'feature-cols-grid';
 
-  columns.forEach((col, idx) => {
+  filteredColumns.forEach((col, idx) => {
     const item = document.createElement('div');
     item.className = 'feature-col-item';
     const cbId = `feat_col_${idx}`;
@@ -453,11 +452,22 @@ function updateFeatureSelectedCount() {
 }
 
 function getAnalysisTags() {
-  // 获取预设已选标签
   const checkedPreset = Array.from(document.querySelectorAll('input[name="analysis_tag"]:checked')).map(cb => cb.value);
-  // 获取自定义标签（已添加的）
   const customChecked = Array.from(document.querySelectorAll('.custom-tag-cb:checked')).map(cb => cb.value);
   return [...checkedPreset, ...customChecked];
+}
+
+function applyDefaultAnalysisTagsByModule(bizModule) {
+  const defaultMap = {
+    rule: ['feature_iv', 'overdue_lift', 'strategy_layer'],
+    model: ['model_score_eval', 'feature_iv', 'overdue_lift', 'psi_stability'],
+  };
+  const targetTags = defaultMap[bizModule];
+  if (!targetTags) return;
+
+  document.querySelectorAll('input[name="analysis_tag"]').forEach(cb => {
+    cb.checked = targetTags.includes(cb.value);
+  });
 }
 
 document.getElementById('btn-change-file').addEventListener('click', () => {
@@ -476,14 +486,12 @@ async function runAnalysis() {
   const targetCol = document.getElementById('target-col').value;
   const nBins = document.getElementById('n-bins').value;
   const note = document.getElementById('analysis-note').value;
+  const runButton = document.getElementById('btn-run-analysis');
+  const originalRunButtonHtml = runButton ? runButton.innerHTML : '';
 
-  // 获取分析类型标签
   const analysisTags = getAnalysisTags();
-
-  // 获取特征列（未选则传空数组，后端按全部处理）
   const featureCols = getSelectedFeatureCols();
 
-  // 智能推断 score_col：从特征列中找最像分数的列
   const allColumns = currentState.uploadedFile.columns || [];
   const scorePatterns = /score|分数|prob|预测|model|risk/i;
   const guessedScoreCol = allColumns.find(c => scorePatterns.test(c)) || '';
@@ -492,66 +500,46 @@ async function runAnalysis() {
     showToast('请选择目标列（逾期标签）', 'error');
     return;
   }
+
+  if (runButton) {
+    runButton.disabled = true;
+    runButton.innerHTML = '正在分析，请稍等';
+  }
   
-  // 先检查大模型配置
-  showLoading('正在检查AI配置...');
+  showLoading('正在分析，请稍等');
   try {
     const configRes = await fetch(`${API_BASE}/analysis/llm-config`);
     const config = await configRes.json();
-
-    if (config.configured) {
-      showLoading('正在调用大模型进行实时策略分析，请稍候...\n（分析时间约10-30秒）');
-    } else {
-      showLoading('AI分析助手正在生成策略建议...\n（当前使用模拟模式，配置API Key后可启用真实大模型）');
-    }
+    showLoading(config.configured ? '正在分析，请稍等' : '正在分析，请稍等');
   } catch (e) {
-    showLoading('正在执行策略分析，请稍候...');
+    showLoading('正在分析，请稍等');
   }
 
-  // ── 判断走哪个路由 ───────────────────────────────────────────────────────
   const bizModule = document.getElementById('biz-module')?.value || '';
   const isMultiModel = Array.isArray(featureCols) && featureCols.length >= 2;
   const isRuleAnalysis = bizModule === 'rule';
   
-  // 根据业务模块和模型数量决定调用哪个接口
   let apiEndpoint;
   if (isRuleAnalysis) {
-    // 规则分析模块
     apiEndpoint = `${API_BASE}/analysis/rule-analysis`;
   } else if (bizModule === 'model') {
-    // 模型分析模块
     if (isMultiModel) {
-      // 多模型 → 相关性分析
       apiEndpoint = `${API_BASE}/analysis/model-correlation`;
     } else {
-      // 单模型 → 分箱分析
       apiEndpoint = `${API_BASE}/analysis/model-binning`;
     }
   } else {
-    // 非模型模块或默认走原有多模型/单模型分析
     apiEndpoint = isMultiModel
       ? `${API_BASE}/analysis/multi-model`
       : `${API_BASE}/analysis/run`;
   }
 
-  if (isMultiModel) {
-    showLoading(`正在对 ${featureCols.length} 个模型进行综合分析...\n相关性热力图 · 聚类分析 · 互补性矩阵 · 串行策略模拟\n（约15-60秒，请耐心等待）`);
-  } else if (bizModule === 'model') {
-    showLoading(`正在进行模型分箱分析...\n等频分箱 · KS/AUC计算 · Lift分析\n（约5-15秒，请耐心等待）`);
-  } else if (isRuleAnalysis) {
-    showLoading(`正在进行规则分析...\n拦截效果 · 命中分布 · 交叉分析 · 逾期关系\n（约5-15秒，请耐心等待）`);
-  }
-
   try {
-    // 获取渠道筛选参数
     const channelCol = document.getElementById('channel-col-select')?.value || '';
     const channelValues = channelCol ? getSelectedChannelValues() : [];
-    
-    // 获取业务场景参数
     const bizScenario = document.getElementById('biz-scenario')?.value || '';
     const bizCountry = document.getElementById('biz-country')?.value || '';
     
-    // 构建请求 payload
     const payload = {
       file_id: currentState.uploadedFile.file_id,
       file_name: currentState.uploadedFile.file_name,
@@ -564,16 +552,13 @@ async function runAnalysis() {
       n_bins: parseInt(nBins),
       user_note: note,
       use_agent: false,
-      // 业务场景参数
-      biz_scenario: bizScenario,   // 首贷/复贷
-      biz_country: bizCountry,     // 国家
-      biz_module: bizModule,        // 模块
-      // 渠道筛选参数
+      biz_scenario: bizScenario,
+      biz_country: bizCountry,
+      biz_module: bizModule,
       channel_col: channelCol,
       channel_values: channelValues,
     };
     
-    // 规则分析需要额外的 rule_cols 参数
     if (isRuleAnalysis) {
       payload.rule_cols = featureCols;
     }
@@ -595,15 +580,11 @@ async function runAnalysis() {
     currentState.analysisResult = data;
     currentState.analysisResult._analysisTags = analysisTags;
 
-    // ── 根据分析模式渲染 ────────────────────────────────────────────────
     if (data.mode === 'rule_analysis') {
-      // 规则分析模块：使用 iframe 展示规则分析报告
       displayRuleReportResults(data);
     } else if (data.mode === 'model_binning' || data.mode === 'model_correlation') {
-      // 模型分析模块：使用新的报告 iframe 展示
       displayModelReportResults(data);
     } else if (data.mode === 'expert_analysis') {
-      // 新增：专家深度分析模式
       displayExpertAnalysisResults(data);
     } else if (data.mode === 'multi_model') {
       displayMultiModelResults(data);
@@ -616,10 +597,14 @@ async function runAnalysis() {
   } catch (err) {
     hideLoading();
     showToast('分析失败: ' + err.message, 'error');
+  } finally {
+    if (runButton) {
+      runButton.disabled = false;
+      runButton.innerHTML = originalRunButtonHtml;
+    }
   }
 }
 
-// ── 模型分析报告结果展示（iframe嵌入完整HTML报告）───────────────────────
 function displayModelReportResults(data) {
   // 显示结果区域
   document.getElementById('analysis-result').classList.remove('hidden');
@@ -3372,7 +3357,7 @@ function renderReviewsTable(reviews) {
 
 function getAnalysisTagLabel(value) {
   const tagMap = {
-    'model_score_eval': '模型评估',
+    'model_score_eval': '模型效果评估',
     'feature_iv': '特征IV',
     'overdue_lift': '逾期/Lift',
     'psi_stability': 'PSI稳定',

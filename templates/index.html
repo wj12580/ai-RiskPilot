@@ -184,7 +184,7 @@
               <div class="analysis-tags-container" id="analysis-tags-container">
                 <label class="tag-checkbox" title="综合评估KS/AUC/IV等模型指标">
                   <input type="checkbox" name="analysis_tag" value="model_score_eval">
-                  <span>模型分数总和评估(IV+KS+AUC)</span>
+                  <span>模型效果评估</span>
                 </label>
                 <label class="tag-checkbox" title="分析各特征的信息价值">
                   <input type="checkbox" name="analysis_tag" value="feature_iv">
@@ -218,7 +218,7 @@
                 <div class="form-group" id="channel-group">
                   <label class="form-label">渠道组筛选 <span class="config-hint">（先选字段，再选渠道）</span></label>
                   <select id="channel-col-select" class="form-select" style="margin-bottom:8px;" onchange="onChannelColChange()">
-                    <option value="">-- 先选择渠道字段 --</option>
+                    <option value="">选择渠道字段</option>
                   </select>
                   <div id="channel-multiselect" class="feature-multiselect-container" style="max-height:100px;overflow-y:auto;">
                     <div style="color:#9ca3af;font-size:0.85rem;padding:8px 0;">请先上传文件，再选择渠道字段</div>

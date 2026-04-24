@@ -11,6 +11,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+from sklearn.tree import DecisionTreeClassifier, _tree
 
 
 def _prepare_data(df: pd.DataFrame, target_col: str, rule_cols: List[str]) -> pd.DataFrame:
@@ -80,14 +81,17 @@ def run_rule_analysis(
     
     # 2. 用户画像分析（好/坏用户群体的规则取值和组合）
     result['user_profile'] = _analyze_user_profile(df, rule_cols, target_col)
+
+    # 3. 决策树可视化
+    result['decision_tree'] = _build_rule_decision_tree(df, rule_cols, target_col)
     
-    # 3. 图表数据
+    # 4. 图表数据
     result['charts'] = _generate_chart_data(result)
     
-    # 4. HTML报告
+    # 5. HTML报告
     result['summary_table'] = _generate_summary_table(result)
     
-    # 5. 详细数据
+    # 6. 详细数据
     result['details'] = _generate_details(result)
     
     return result
@@ -350,6 +354,8 @@ def _analyze_user_profile(
         good_threshold = max(0.5, overall_bad_rate * 0.7)  # 逾期率低于70%的整体逾期率
         good_values = grouped[grouped['bad_rate'] < good_threshold].sort_values('bad_rate')
         
+        good_values = good_values[good_values['count'] > 10]
+
         for _, row in good_values.iterrows():
             value_label = str(row[rule_col])
             result['good_rules'].append({
@@ -366,6 +372,8 @@ def _analyze_user_profile(
         bad_threshold = min(1.0, overall_bad_rate * 1.5)  # 逾期率高于150%的整体逾期率
         bad_values = grouped[grouped['bad_rate'] > bad_threshold].sort_values('bad_rate', ascending=False)
         
+        bad_values = bad_values[bad_values['count'] > 10]
+
         for _, row in bad_values.iterrows():
             value_label = str(row[rule_col])
             result['bad_rules'].append({
@@ -467,6 +475,73 @@ def _analyze_user_profile(
     return result
 
 
+def _build_rule_decision_tree(df: pd.DataFrame, rule_cols: List[str], target_col: str) -> Dict[str, Any]:
+    """基于规则列构建浅层决策树，并输出叶子节点规则说明"""
+    if target_col not in df.columns or not rule_cols:
+        return {'leaf_nodes': []}
+
+    valid_cols = [col for col in rule_cols if col in df.columns]
+    if not valid_cols or len(df) < 20:
+        return {'leaf_nodes': []}
+
+    try:
+        feature_df = df[valid_cols].copy()
+        for col in valid_cols:
+            if pd.api.types.is_numeric_dtype(feature_df[col]):
+                feature_df[col] = pd.to_numeric(feature_df[col], errors='coerce').fillna(feature_df[col].median() if feature_df[col].notna().any() else 0)
+            else:
+                feature_df[col] = feature_df[col].fillna('缺失').astype(str)
+
+        x = pd.get_dummies(feature_df, dummy_na=False)
+        if x.empty:
+            return {'leaf_nodes': []}
+
+        y = pd.to_numeric(df[target_col], errors='coerce').fillna(0).astype(int)
+        clf = DecisionTreeClassifier(max_depth=4, min_samples_leaf=10, random_state=42)
+        clf.fit(x, y)
+
+        tree = clf.tree_
+        feature_names = list(x.columns)
+        leaf_nodes = []
+
+        def walk(node_id: int, path_rules: List[str]):
+            feature_index = tree.feature[node_id]
+            if feature_index == _tree.TREE_UNDEFINED:
+                sample_count = int(tree.n_node_samples[node_id])
+                if sample_count < 10:
+                    return
+                values = tree.value[node_id][0]
+                bad_count = float(values[1]) if len(values) > 1 else 0.0
+                bad_rate = bad_count / sample_count if sample_count else 0.0
+                leaf_nodes.append({
+                    'node_id': node_id,
+                    'sample_count': sample_count,
+                    'bad_count': int(round(bad_count)),
+                    'bad_rate': float(bad_rate),
+                    'rules': path_rules[:] or ['全部样本'],
+                })
+                return
+
+            feature_name = feature_names[feature_index]
+            threshold = float(tree.threshold[node_id])
+            if threshold == 0.5 and ('_' in feature_name):
+                rule_name, feature_value = feature_name.split('_', 1)
+                left_rule = f"{rule_name} ≠ {feature_value}"
+                right_rule = f"{rule_name} = {feature_value}"
+            else:
+                left_rule = f"{feature_name} ≤ {threshold:.4f}"
+                right_rule = f"{feature_name} > {threshold:.4f}"
+
+            walk(tree.children_left[node_id], path_rules + [left_rule])
+            walk(tree.children_right[node_id], path_rules + [right_rule])
+
+        walk(0, [])
+        leaf_nodes.sort(key=lambda item: item['bad_rate'], reverse=True)
+        return {'leaf_nodes': leaf_nodes[:12]}
+    except Exception:
+        return {'leaf_nodes': []}
+
+
 def _generate_chart_data(result: Dict) -> Dict:
     """生成图表数据"""
     charts = {}
@@ -519,6 +594,7 @@ def _generate_details(result: Dict) -> Dict:
     return {
         'rule_binning_detail': result.get('rule_binning', {}),
         'user_profile_detail': result.get('user_profile', {}),
+        'decision_tree_detail': result.get('decision_tree', {}),
     }
 
 
@@ -528,6 +604,7 @@ def generate_rule_html_report(result: Dict, analysis_date: str) -> str:
     summary = result.get('data_summary', {})
     rule_binning = result.get('rule_binning', {})
     user_profile = result.get('user_profile', {})
+    decision_tree = result.get('decision_tree', {})
     
     # 渲染好/坏用户规则列表
     good_rules_html = _render_user_rules(user_profile.get('good_rules', []), 'good')
@@ -539,6 +616,7 @@ def generate_rule_html_report(result: Dict, analysis_date: str) -> str:
     
     # 渲染规则分箱表
     bin_tables_html = _render_rule_binning_tables(rule_binning)
+    decision_tree_html = _render_decision_tree(decision_tree)
     
     html = f"""
 <!DOCTYPE html>
@@ -594,6 +672,13 @@ def generate_rule_html_report(result: Dict, analysis_date: str) -> str:
         .empty-msg {{ text-align: center; padding: 40px; color: #999; }}
         .bin-table {{ font-size: 13px; }}
         .bin-table th {{ background: #f0f4ff; font-size: 12px; }}
+        .tree-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }}
+        .tree-card {{ border: 1px solid #dbeafe; background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%); border-radius: 10px; padding: 16px; }}
+        .tree-card h4 {{ font-size: 15px; color: #1d4ed8; margin-bottom: 10px; }}
+        .tree-rules {{ font-size: 12px; color: #374151; line-height: 1.7; margin-bottom: 10px; }}
+        .tree-meta {{ font-size: 12px; color: #6b7280; }}
+        .rate-bar-track {{ width: 160px; height: 10px; border-radius: 999px; background: #e5e7eb; overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 8px; }}
+        .rate-bar-fill {{ height: 100%; background: linear-gradient(90deg, #f59e0b 0%, #dc2626 100%); border-radius: 999px; display: block; }}
     </style>
 </head>
 <body>
@@ -663,6 +748,13 @@ def generate_rule_html_report(result: Dict, analysis_date: str) -> str:
         </div>
     </div>
     
+    <!-- 决策树可视化 -->
+    <div class="section">
+        <div class="section-title">🌳 规则决策树</div>
+        <p style="color: #666; margin-bottom: 16px; font-size: 13px;">树深度不超过 4 层，叶子节点样本数大于 10，展示叶子节点规则名、阈值、逾期率和样本数。</p>
+        {decision_tree_html}
+    </div>
+    
     <!-- 规则分箱分析 -->
     <div class="section">
         <div class="section-title">📊 规则分箱分析（取值-首逾-Lift）</div>
@@ -684,9 +776,8 @@ def _render_user_rules(rules: List[Dict], profile_type: str) -> str:
         return ''
     
     html = ''
-    for r in rules[:10]:  # 最多显示10个
+    for r in rules[:10]:
         lift = r.get('lift', 0)
-        lift_class = 'lift-low' if lift < 0.7 else ('lift-mid' if lift < 1 else 'lift-high')
         html += f"""
         <div class="profile-item">
             <div class="rule-name">{r['rule']} <span class="badge badge-{profile_type}">{r['value']}</span></div>
@@ -708,7 +799,7 @@ def _render_user_combos(combos: List[Dict], profile_type: str) -> str:
         return ''
     
     html = ''
-    for c in combos[:8]:  # 最多显示8个
+    for c in combos[:8]:
         lift = c.get('lift', 0)
         rule1 = c.get('rule1', '')
         value1 = c.get('value1', '')
@@ -736,6 +827,28 @@ def _render_user_combos(combos: List[Dict], profile_type: str) -> str:
     return html
 
 
+def _render_decision_tree(decision_tree: Dict[str, Any]) -> str:
+    """渲染决策树叶子节点卡片"""
+    leaf_nodes = (decision_tree or {}).get('leaf_nodes', [])
+    if not leaf_nodes:
+        return '<div class="empty-msg">暂无可展示的决策树结果</div>'
+
+    cards = []
+    for index, node in enumerate(leaf_nodes, start=1):
+        rules_html = '<br>'.join(node.get('rules', []))
+        cards.append(f"""
+        <div class="tree-card">
+            <h4>叶子节点 {index}</h4>
+            <div class="tree-rules">{rules_html}</div>
+            <div class="tree-meta">样本数：{node.get('sample_count', 0):,}</div>
+            <div class="tree-meta">坏样本数：{node.get('bad_count', 0):,}</div>
+            <div class="tree-meta">逾期率：{node.get('bad_rate', 0) * 100:.2f}%</div>
+        </div>
+        """)
+
+    return f'<div class="tree-grid">{"".join(cards)}</div>'
+
+
 def _render_rule_binning_tables(rule_binning: Dict) -> str:
     """渲染规则分箱表格"""
     if not rule_binning:
@@ -744,6 +857,8 @@ def _render_rule_binning_tables(rule_binning: Dict) -> str:
     html = ''
     for rule_name, bin_data in rule_binning.items():
         bin_type = '等频分箱' if bin_data.get('bin_type') == 'continuous' else '离散取值'
+        bins = bin_data.get('bins', [])
+        max_bad_rate = max([b.get('bad_rate', 0) for b in bins], default=0)
         html += f"""
         <div class="rule-binning-section">
             <h4>📌 {rule_name} <span>({bin_type}, 共{bin_data.get('unique_count', 0)}个取值)</span></h4>
@@ -761,10 +876,11 @@ def _render_rule_binning_tables(rule_binning: Dict) -> str:
                 </thead>
                 <tbody>
 """
-        for b in bin_data.get('bins', []):
+        for b in bins:
             lift = b.get('lift', 0)
             lift_class = 'lift-high' if lift > 1.5 else ('lift-mid' if lift > 1 else 'lift-low')
             bin_label = b.get('bin_range', b.get('value', ''))
+            bar_width = 100 if max_bad_rate <= 0 else min(100, (b.get('bad_rate', 0) / max_bad_rate) * 100)
             html += f"""
                     <tr>
                         <td>{bin_label}</td>
@@ -772,7 +888,10 @@ def _render_rule_binning_tables(rule_binning: Dict) -> str:
                         <td>{b.get('count_pct', 0):.1f}%</td>
                         <td style="color:#16a34a">{b.get('good_count', 0):,}</td>
                         <td style="color:#dc2626">{b.get('bad_count', 0):,}</td>
-                        <td>{b.get('bad_rate', 0)*100:.2f}%</td>
+                        <td>
+                            <span class="rate-bar-track"><span class="rate-bar-fill" style="width:{bar_width:.1f}%"></span></span>
+                            {b.get('bad_rate', 0)*100:.2f}%
+                        </td>
                         <td class="{lift_class}">{lift:.2f}</td>
                     </tr>
 """
