@@ -1,73 +1,47 @@
 """
 风控 Agent 路由核心
-===================
-混合路由策略：
-  - 主模型：GLM-4-Flash（免费，优先调用）
-  - 备用模型：DeepSeek V3（GLM 限流 / 失败时自动切换）
-  - 所有模型均通过 OpenAI SDK 兼容接口调用
-
-配置方式（按优先级）：
-  1. 环境变量：GLM_API_KEY / DS_API_KEY
-  2. .env 文件（项目根目录）
-  3. 硬编码（不推荐，仅供快速测试）
+统一模型顺序：GPT → GLM → DeepSeek
 """
 
 import os
-import re
-import json
 import time
-import html
 from typing import Optional, Dict, Any, List
 
-# ── 兼容 .env 文件 ───────────────────────────────────────────────────────────
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
-    pass  # 无 dotenv 也不报错
+    pass
 
-# ── API 配置（从环境变量读取）────────────────────────────────────────────────
-# 优先读环境变量，环境变量为空时再用硬编码的 Key（方便快速测试）
+_GPT_KEY_HARDCODE = "sk-5c0s1ajxHKoow8e2ozA0khQqHoPMZwmsJqD0S9wxczYsJgqZ"
 _GLM_KEY_HARDCODE = "b0d3d79a850a422cb6026d7ed7937d16.bxdAMKWFeJMw6gBN"
-_DS_KEY_HARDCODE  = ""
+_DS_KEY_HARDCODE = ""
+
+GPT_API_KEY = os.environ.get('GPT_API_KEY', '').strip() or _GPT_KEY_HARDCODE
+GPT_BASE_URL = os.environ.get('GPT_BASE_URL', 'https://www.packyapi.com/v1')
+GPT_MODEL = os.environ.get('GPT_MODEL', 'gpt-5.4')
 
 GLM_API_KEY = os.environ.get('GLM_API_KEY', '').strip() or _GLM_KEY_HARDCODE
 GLM_BASE_URL = os.environ.get('GLM_BASE_URL', 'https://open.bigmodel.cn/api/paas/v4')
-GLM_MODEL    = os.environ.get('GLM_MODEL', 'glm-4-flash')   # 免费主力
+GLM_MODEL = os.environ.get('GLM_MODEL', 'glm-4-flash')
 
 DS_API_KEY = os.environ.get('DS_API_KEY', '').strip() or _DS_KEY_HARDCODE
 DS_BASE_URL = os.environ.get('DS_BASE_URL', 'https://api.deepseek.com')
-DS_MODEL = os.environ.get('DS_MODEL', 'deepseek-chat')   # 备用兜底
+DS_MODEL = os.environ.get('DS_MODEL', 'deepseek-chat')
 
-# ── 请求配置 ────────────────────────────────────────────────────────────────
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_MAX_TOKENS = 3000
-REQUEST_TIMEOUT = 120   # 秒
+REQUEST_TIMEOUT = int(os.environ.get("LLM_REQUEST_TIMEOUT", "30"))
 
-
-# ════════════════════════════════════════════════════════════════════════════
-# 核心路由类
-# ════════════════════════════════════════════════════════════════════════════
 
 class ModelRouter:
-    """
-    智能混合路由：优先 GLM 免费模型，失败自动切 DeepSeek
-
-    特性：
-      ✅ 优先调用 GLM-4-Flash（免费）
-      ✅ GLM 限流 / 网络错误时自动切换 DeepSeek
-      ✅ 精确计算 token 消耗和费用
-      ✅ 支持 GLM 结构化输出（JSON Mode）
-      ✅ 并发请求优化（GLM + DS 同时发，取先返回的）
-      ✅ 详细的调用日志和错误追踪
-    """
+    """统一模型路由：GPT 优先，失败后回退 GLM，再回退 DeepSeek。"""
 
     def __init__(self):
+        self._gpt_ok = bool(GPT_API_KEY)
         self._glm_ok = bool(GLM_API_KEY)
-        self._ds_ok  = bool(DS_API_KEY)
-        self._stats  = {"glm_calls": 0, "ds_calls": 0, "fallbacks": 0}
-
-    # ── 公开接口 ─────────────────────────────────────────────────────────────
+        self._ds_ok = bool(DS_API_KEY)
+        self._stats = {"gpt_calls": 0, "glm_calls": 0, "ds_calls": 0, "fallbacks": 0}
 
     def call(
         self,
@@ -80,245 +54,283 @@ class ModelRouter:
         tools: Optional[List[Dict]] = None,
         tool_choice: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """
-        主调用入口，自动选择最优模型
-
-        Args:
-            prompt:      用户提示词
-            system:      系统提示词
-            model:       强制指定模型（"glm" / "ds" / None=自动）
-            temperature:  温度参数
-            max_tokens:  最大 token 数
-            json_mode:   是否要求 JSON 格式输出
-            tools:       工具定义列表（Function Calling）
-            tool_choice: 强制使用哪个工具
-
-        Returns:
-            {
-                "content": str,       # 模型回答
-                "model": str,          # 实际调用的模型
-                "tokens_used": int,    # 估算 token 消耗
-                "cost": float,         # 本次费用（元）
-                "latency": float,     # 耗时（秒）
-                "success": bool,
-                "error": Optional[str],
-            }
-        """
         start = time.time()
-        forced = model or ""
+        forced = (model or "").lower().strip()
 
-        # ── 优先尝试 GLM ───────────────────────────────────────────────────
-        if forced in ("", "glm") and self._glm_ok:
-            result = self._call_glm(prompt, system, temperature, max_tokens,
-                                    json_mode, tools, tool_choice)
-            result["latency"] = round(time.time() - start, 2)
-            if result["success"]:
-                self._stats["glm_calls"] += 1
-                return result
-            # GLM 失败，触发降级
-            if "rate_limit" in str(result.get("error", "")).lower() or \
-               "限流" in str(result.get("error", "")):
+        glm_error = "Skipped"
+        gpt_error = "Skipped"
+        ds_error = "Skipped"
+
+        # 默认顺序：GLM -> GPT -> DS
+        provider_order = ["glm", "gpt", "ds"]
+        if forced == "gpt":
+            provider_order = ["gpt"]
+        elif forced == "ds":
+            provider_order = ["ds"]
+        elif forced == "glm":
+            provider_order = ["glm"]
+
+        for provider in provider_order:
+            if provider == "glm":
+                if not self._glm_ok:
+                    continue
+                result = self._call_glm(prompt, system, temperature, max_tokens, json_mode, tools, tool_choice)
+                result["latency"] = round(time.time() - start, 2)
+                if result.get("success"):
+                    self._stats["glm_calls"] += 1
+                    return result
                 self._stats["fallbacks"] += 1
+                glm_error = result.get("error", "Unknown")
+            elif provider == "gpt":
+                if not self._gpt_ok:
+                    continue
+                result = self._call_gpt(prompt, system, temperature, max_tokens, json_mode, tools, tool_choice)
+                result["latency"] = round(time.time() - start, 2)
+                if result.get("success"):
+                    self._stats["gpt_calls"] += 1
+                    return result
+                self._stats["fallbacks"] += 1
+                gpt_error = result.get("error", "Unknown")
+            elif provider == "ds":
+                if not self._ds_ok:
+                    continue
+                result = self._call_ds(prompt, system, temperature, max_tokens, json_mode, tools, tool_choice)
+                result["latency"] = round(time.time() - start, 2)
+                if result.get("success"):
+                    self._stats["ds_calls"] += 1
+                    return result
+                ds_error = result.get("error", "Unknown")
 
-        # ── 降级到 DeepSeek ─────────────────────────────────────────────────
-        if forced in ("", "ds") and self._ds_ok:
-            result = self._call_ds(prompt, system, temperature, max_tokens,
-                                   json_mode, tools, tool_choice)
-            result["latency"] = round(time.time() - start, 2)
-            if result["success"]:
-                self._stats["ds_calls"] += 1
-                return result
-            # DS 也失败，返回详细错误
-            return {
-                **result,
-                "latency": round(time.time() - start, 2),
-                "content": f"[所有模型均失败]\n\nGLM 错误：{result.get('error_glm', 'N/A')}\nDS 错误：{result.get('error_ds', result.get('error', 'Unknown'))}",
-            }
-
-        # ── 没有任何模型可用 ───────────────────────────────────────────────
         return {
-            "content":    "",
-            "model":      "none",
+            "content": f"[all providers failed]\n\nGLM error: {glm_error}\nGPT error: {gpt_error}\nDS error: {ds_error}",
+            "model": "none",
             "tokens_used": 0,
-            "cost":        0.0,
-            "latency":     round(time.time() - start, 2),
-            "success":     False,
-            "error":       "未配置任何 API Key（GLM_API_KEY / DS_API_KEY 均未设置）",
+            "cost": 0.0,
+            "latency": round(time.time() - start, 2),
+            "success": False,
+            "error": "No available provider succeeded",
         }
 
-    def batch_call(
-        self,
-        prompts: List[Dict[str, str]],
-        model: Optional[str] = None,
-    ) -> List[Dict[str, Any]]:
-        """
-        批量调用（串行），返回结果列表
-        prompts: [{"prompt": str, "system": Optional[str], "id": Optional[str]}, ...]
-        """
+    def batch_call(self, prompts: List[Dict[str, str]], model: Optional[str] = None) -> List[Dict[str, Any]]:
         results = []
         for p in prompts:
-            r = self.call(
-                prompt=p.get("prompt", ""),
-                system=p.get("system"),
-                model=model,
-            )
+            r = self.call(prompt=p.get("prompt", ""), system=p.get("system"), model=model)
             r["id"] = p.get("id")
             results.append(r)
         return results
 
     def stats(self) -> Dict[str, Any]:
-        """返回调用统计"""
-        return {**self._stats, "glm_configured": self._glm_ok, "ds_configured": self._ds_ok}
+        return {
+            **self._stats,
+            "gpt_configured": self._gpt_ok,
+            "glm_configured": self._glm_ok,
+            "ds_configured": self._ds_ok,
+        }
 
     def config_status(self) -> Dict[str, Any]:
-        """返回配置状态详情"""
         return {
             "glm": {
                 "configured": self._glm_ok,
-                "model":      GLM_MODEL,
-                "base_url":   GLM_BASE_URL,
+                "model": GLM_MODEL,
+                "base_url": GLM_BASE_URL,
+                "priority": 1,
+            },
+            "gpt": {
+                "configured": self._gpt_ok,
+                "model": GPT_MODEL,
+                "base_url": GPT_BASE_URL,
+                "priority": 2,
+                "warning": "当前 GPT 默认渠道若为 packyapi，可能出现 gpt-4o-mini distributor 不可用问题",
             },
             "ds": {
                 "configured": self._ds_ok,
-                "model":      DS_MODEL,
-                "base_url":   DS_BASE_URL,
+                "model": DS_MODEL,
+                "base_url": DS_BASE_URL,
+                "priority": 3,
             },
             "recommendation": self._recommend(),
         }
 
-    # ── 私有方法 ───────────────────────────────────────────────────────────
-
     def _recommend(self) -> str:
-        """根据配置状态给出建议"""
+        if self._glm_ok and self._gpt_ok:
+            return "✅ 已配置 GLM + GPT，自动路由生效（GLM优先，GPT兜底）"
         if self._glm_ok and self._ds_ok:
-            return "✅ 已配置双模型，自动路由生效（GLM优先，DS兜底）"
+            return "✅ 已配置 GLM + DeepSeek，自动路由生效（GLM优先，DS兜底）"
         if self._glm_ok:
-            return "⚠️ 仅配置 GLM，建议补充 DeepSeek 作为备用"
+            return "ℹ️ 仅配置 GLM，建议补充 GPT 作为超时兜底"
+        if self._gpt_ok:
+            return "⚠️ 仅配置 GPT，当前项目建议改为 GLM 主用，GPT 备用"
         if self._ds_ok:
-            return "⚠️ 仅配置 DeepSeek，建议补充 GLM 以节省费用"
-        return (
-            "❌ 未配置任何 API Key！\n"
-            "请设置环境变量：\n"
-            "  GLM_API_KEY=你的智谱APIKey（免费）\n"
-            "  DS_API_KEY=你的DeepSeek API Key（备用）\n"
-            "注册地址：\n"
-            "  智谱 https://open.bigmodel.cn\n"
-            "  DeepSeek https://platform.deepseek.com"
-        )
+            return "ℹ️ 仅配置 DeepSeek，建议补充 GLM"
+        return "❌ 未配置任何可用 API Key"
 
-    def _call_glm(
-        self,
-        prompt: str,
-        system: Optional[str],
-        temperature: float,
-        max_tokens: int,
-        json_mode: bool,
-        tools: Optional[List[Dict]],
-        tool_choice: Optional[str],
-    ) -> Dict[str, Any]:
-        """调用 GLM API"""
+    def _call_gpt(self, prompt: str, system: Optional[str], temperature: float, max_tokens: int, json_mode: bool, tools: Optional[List[Dict]], tool_choice: Optional[str]) -> Dict[str, Any]:
         try:
             import openai
         except ImportError:
-            return {"success": False, "error": "请安装 openai: pip install openai"}
+            return self._call_openai_compatible_http(
+                provider="gpt",
+                api_key=GPT_API_KEY,
+                base_url=GPT_BASE_URL,
+                model_name=GPT_MODEL,
+                prompt=prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                json_mode=json_mode,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
 
-        client = openai.OpenAI(api_key=GLM_API_KEY, base_url=GLM_BASE_URL, timeout=REQUEST_TIMEOUT)
+        try:
+            client = openai.OpenAI(api_key=GPT_API_KEY, base_url=GPT_BASE_URL, timeout=REQUEST_TIMEOUT)
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
 
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+            kwargs = {
+                "model": GPT_MODEL,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+            if tools:
+                kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = tool_choice
 
-        kwargs = {
-            "model":      GLM_MODEL,
-            "messages":   messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-        if tools:
-            kwargs["tools"] = tools
-        if tool_choice:
-            kwargs["tool_choice"] = tool_choice
+            response = client.chat.completions.create(**kwargs)
+            choice = response.choices[0]
+            content = choice.message.content or ""
+            if json_mode:
+                content = self._strip_markdown(content)
+            return {
+                "success": True,
+                "content": content,
+                "model": f"gpt/{GPT_MODEL}",
+                "tokens_used": response.usage.total_tokens if hasattr(response, "usage") else 0,
+                "cost": 0.0,
+                "error": None,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "model": f"gpt/{GPT_MODEL}"}
 
-        response = client.chat.completions.create(**kwargs)
-        choice = response.choices[0]
-
-        content = choice.message.content or ""
-        # GLM JSON Mode 可能包裹在 ```json 中
-        if json_mode:
-            content = self._strip_markdown(content)
-
-        return {
-            "success":      True,
-            "content":      content,
-            "model":        f"glm/{GLM_MODEL}",
-            "tokens_used":  response.usage.total_tokens if hasattr(response, "usage") else 0,
-            "cost":         0.0,   # GLM-4-Flash 免费
-            "error":        None,
-        }
-
-    def _call_ds(
-        self,
-        prompt: str,
-        system: Optional[str],
-        temperature: float,
-        max_tokens: int,
-        json_mode: bool,
-        tools: Optional[List[Dict]],
-        tool_choice: Optional[str],
-    ) -> Dict[str, Any]:
-        """调用 DeepSeek API"""
+    def _call_glm(self, prompt: str, system: Optional[str], temperature: float, max_tokens: int, json_mode: bool, tools: Optional[List[Dict]], tool_choice: Optional[str]) -> Dict[str, Any]:
         try:
             import openai
         except ImportError:
-            return {"success": False, "error": "请安装 openai: pip install openai"}
+            return self._call_openai_compatible_http(
+                provider="glm",
+                api_key=GLM_API_KEY,
+                base_url=GLM_BASE_URL,
+                model_name=GLM_MODEL,
+                prompt=prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                json_mode=json_mode,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
 
-        client = openai.OpenAI(api_key=DS_API_KEY, base_url=DS_BASE_URL, timeout=REQUEST_TIMEOUT)
+        try:
+            client = openai.OpenAI(api_key=GLM_API_KEY, base_url=GLM_BASE_URL, timeout=REQUEST_TIMEOUT)
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
 
-        messages = []
-        if system:
-            messages.append({"role": "system", "content": system})
-        messages.append({"role": "user", "content": prompt})
+            kwargs = {
+                "model": GLM_MODEL,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+            if tools:
+                kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = tool_choice
 
-        kwargs = {
-            "model":      DS_MODEL,
-            "messages":   messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }
-        if json_mode:
-            kwargs["response_format"] = {"type": "json_object"}
-        if tools:
-            kwargs["tools"] = tools
-        if tool_choice:
-            kwargs["tool_choice"] = tool_choice
+            response = client.chat.completions.create(**kwargs)
+            choice = response.choices[0]
+            content = choice.message.content or ""
+            if json_mode:
+                content = self._strip_markdown(content)
+            return {
+                "success": True,
+                "content": content,
+                "model": f"glm/{GLM_MODEL}",
+                "tokens_used": response.usage.total_tokens if hasattr(response, "usage") else 0,
+                "cost": 0.0,
+                "error": None,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "model": f"glm/{GLM_MODEL}"}
 
-        response = client.chat.completions.create(**kwargs)
-        choice = response.choices[0]
+    def _call_ds(self, prompt: str, system: Optional[str], temperature: float, max_tokens: int, json_mode: bool, tools: Optional[List[Dict]], tool_choice: Optional[str]) -> Dict[str, Any]:
+        try:
+            import openai
+        except ImportError:
+            return self._call_openai_compatible_http(
+                provider="ds",
+                api_key=DS_API_KEY,
+                base_url=DS_BASE_URL,
+                model_name=DS_MODEL,
+                prompt=prompt,
+                system=system,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                json_mode=json_mode,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
 
-        content = choice.message.content or ""
-        if json_mode:
-            content = self._strip_markdown(content)
+        try:
+            client = openai.OpenAI(api_key=DS_API_KEY, base_url=DS_BASE_URL, timeout=REQUEST_TIMEOUT)
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
 
-        usage = response.usage if hasattr(response, "usage") else None
-        tokens_used = usage.total_tokens if usage else 0
-        # DeepSeek 估算费用（输入 1元/M，输出 8元/M，按 50/50 估算）
-        cost = tokens_used / 1_000_000 * 5  # 平均 5元/M
+            kwargs = {
+                "model": DS_MODEL,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if json_mode:
+                kwargs["response_format"] = {"type": "json_object"}
+            if tools:
+                kwargs["tools"] = tools
+            if tool_choice:
+                kwargs["tool_choice"] = tool_choice
 
-        return {
-            "success":     True,
-            "content":     content,
-            "model":       f"ds/{DS_MODEL}",
-            "tokens_used": tokens_used,
-            "cost":        round(cost, 4),
-            "error":       None,
-        }
+            response = client.chat.completions.create(**kwargs)
+            choice = response.choices[0]
+            content = choice.message.content or ""
+            if json_mode:
+                content = self._strip_markdown(content)
+            usage = response.usage if hasattr(response, "usage") else None
+            tokens_used = usage.total_tokens if usage else 0
+            cost = tokens_used / 1_000_000 * 5
+            return {
+                "success": True,
+                "content": content,
+                "model": f"ds/{DS_MODEL}",
+                "tokens_used": tokens_used,
+                "cost": round(cost, 4),
+                "error": None,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "model": f"ds/{DS_MODEL}"}
 
     @staticmethod
     def _strip_markdown(text: str) -> str:
-        """去掉 ```json ... ``` 包裹"""
         text = text.strip()
         if text.startswith("```json"):
             text = text[7:]
@@ -328,52 +340,137 @@ class ModelRouter:
             text = text[:-3]
         return text.strip()
 
+    def _call_openai_compatible_http(
+        self,
+        provider: str,
+        api_key: str,
+        base_url: str,
+        model_name: str,
+        prompt: str,
+        system: Optional[str],
+        temperature: float,
+        max_tokens: int,
+        json_mode: bool,
+        tools: Optional[List[Dict]],
+        tool_choice: Optional[str],
+    ) -> Dict[str, Any]:
+        """
+        在 openai SDK 不可用时，走 OpenAI 兼容 HTTP 协议调用，避免依赖导致全量失败。
+        """
+        try:
+            import requests
+        except ImportError:
+            return {"success": False, "error": "请安装 requests: pip install requests", "model": f"{provider}/{model_name}"}
 
-# ════════════════════════════════════════════════════════════════════════════
-# 全局路由实例（单例，整个应用共享）
-# ════════════════════════════════════════════════════════════════════════════
+        try:
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            messages.append({"role": "user", "content": prompt})
+
+            payload: Dict[str, Any] = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+            if json_mode:
+                payload["response_format"] = {"type": "json_object"}
+            if tools:
+                payload["tools"] = tools
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
+
+            url = f"{base_url.rstrip('/')}/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            }
+            resp = requests.post(url, headers=headers, json=payload, timeout=REQUEST_TIMEOUT)
+            if resp.status_code >= 400:
+                error_msg = f"HTTP {resp.status_code}: {resp.text[:300]}"
+                return {"success": False, "error": error_msg, "model": f"{provider}/{model_name}"}
+
+            body = resp.json()
+            choices = body.get("choices", []) if isinstance(body, dict) else []
+            if not choices:
+                return {"success": False, "error": "empty choices", "model": f"{provider}/{model_name}"}
+
+            message = choices[0].get("message", {}) if isinstance(choices[0], dict) else {}
+            content = message.get("content", "")
+            if isinstance(content, list):
+                # 兼容多段 content 结构
+                parts = []
+                for part in content:
+                    if isinstance(part, dict):
+                        txt = part.get("text")
+                        if txt:
+                            parts.append(str(txt))
+                content = "\n".join(parts)
+            content = str(content or "")
+            if json_mode:
+                content = self._strip_markdown(content)
+
+            usage = body.get("usage", {}) if isinstance(body, dict) else {}
+            tokens_used = int(usage.get("total_tokens") or 0)
+            if tokens_used <= 0:
+                try:
+                    tokens_used = int((usage.get("prompt_tokens") or 0) + (usage.get("completion_tokens") or 0))
+                except Exception:
+                    tokens_used = 0
+
+            cost = 0.0
+            if provider == "ds":
+                cost = round(tokens_used / 1_000_000 * 5, 4)
+
+            return {
+                "success": True,
+                "content": content,
+                "model": f"{provider}/{model_name}",
+                "tokens_used": tokens_used,
+                "cost": cost,
+                "error": None,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e), "model": f"{provider}/{model_name}"}
+
+
 router = ModelRouter()
 
-
-# ════════════════════════════════════════════════════════════════════════════
-# 快捷调用函数
-# ════════════════════════════════════════════════════════════════════════════
 
 def call_glm_with_ds(
     prompt: str,
     system: Optional[str] = None,
     json_mode: bool = False,
     temperature: float = DEFAULT_TEMPERATURE,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
 ) -> Dict[str, Any]:
-    """
-    快捷调用：混合路由（推荐入口）
-
-    Returns:
-        {"content": str, "model": str, "cost": float, "success": bool, ...}
-    """
-    return router.call(prompt, system=system, json_mode=json_mode, temperature=temperature)
+    return router.call(
+        prompt,
+        system=system,
+        json_mode=json_mode,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
 
 
 def call_glm_only(prompt: str, system: Optional[str] = None) -> Dict[str, Any]:
-    """只调用 GLM（完全免费）"""
     return router.call(prompt, system=system, model="glm")
 
 
+def call_gpt_only(prompt: str, system: Optional[str] = None) -> Dict[str, Any]:
+    return router.call(prompt, system=system, model="gpt")
+
+
 def call_ds_only(prompt: str, system: Optional[str] = None) -> Dict[str, Any]:
-    """只调用 DeepSeek"""
     return router.call(prompt, system=system, model="ds")
 
 
 def check_router_status() -> Dict[str, Any]:
-    """返回路由系统状态（供前端 /api/analysis/llm-config 使用）"""
     status = router.config_status()
-    stats  = router.stats()
+    stats = router.stats()
     return {**status, "stats": stats}
 
-
-# ════════════════════════════════════════════════════════════════════════════
-# 提示词模板库（风控专用）
-# ════════════════════════════════════════════════════════════════════════════
 
 RISK_SYSTEM_PROMPT = (
     "你是一位资深风控策略分析师，擅长信贷风控领域的策略设计与优化，"
@@ -442,7 +539,6 @@ RISK_STRATEGY_PROMPT = """你是资深风控策略分析师。根据以下分析
 
 
 def build_bins_text(bins: List[Dict], max_bins: int = 10) -> str:
-    """将分箱数据格式化为易读文本"""
     lines = []
     for i, b in enumerate(bins[:max_bins]):
         lines.append(
@@ -454,10 +550,10 @@ def build_bins_text(bins: List[Dict], max_bins: int = 10) -> str:
 
 
 def estimate_cost(prompt_tokens: int, completion_tokens: int, model: str = "ds") -> float:
-    """估算 token 费用（元）"""
     rates = {
-        "ds":  (1 / 1_000_000, 8 / 1_000_000),   # DeepSeek: 1元/M输入, 8元/M输出
-        "glm": (0, 0),                             # GLM 免费
+        "ds": (1 / 1_000_000, 8 / 1_000_000),
+        "glm": (0, 0),
+        "gpt": (0, 0),
     }
     if model not in rates:
         return 0.0

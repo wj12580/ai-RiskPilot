@@ -10,6 +10,8 @@ let currentState = {
   page: 'analysis',
   uploadedFile: null,
   analysisResult: null,
+  reportHistory: { model: [], rule: [] },
+  activeReport: { model: null, rule: null },
   records: [],
   reviews: [],
   reviewColumns: [],     // 复盘文件列名列表
@@ -605,6 +607,182 @@ async function runAnalysis() {
   }
 }
 
+function pushReportHistory(type, payload) {
+  if (!currentState.reportHistory[type]) {
+    currentState.reportHistory[type] = [];
+  }
+  currentState.reportHistory[type].unshift(payload);
+  if (currentState.reportHistory[type].length > 8) {
+    currentState.reportHistory[type] = currentState.reportHistory[type].slice(0, 8);
+  }
+}
+
+function setActiveReport(type, entry) {
+  if (!currentState.activeReport) {
+    currentState.activeReport = { model: null, rule: null };
+  }
+  const normalized = entry || {};
+  currentState.activeReport[type] = normalized;
+  currentState.lastTaskId = normalized.taskId || '';
+  currentState.reportFilename = normalized.filename || '';
+  currentState.reportHtml = normalized.html || '';
+}
+
+function renderReportHistory(type, onSelect) {
+  const wrapId = type === 'model' ? 'model-report-history-wrap' : 'rule-report-history-wrap';
+  const wrap = document.getElementById(wrapId);
+  const history = currentState.reportHistory[type] || [];
+  if (!wrap) return;
+
+  if (history.length <= 1) {
+    wrap.classList.add('hidden');
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const older = history.slice(1);
+  wrap.classList.remove('hidden');
+  wrap.innerHTML = `
+    <div class="report-history-title">历史报告（默认展示最近一个，点击可切换）</div>
+    <button class="report-history-toggle" type="button">展开历史报告（${older.length}）</button>
+    <div class="report-history-list hidden">
+      ${older.map((item, idx) => `
+        <button class="report-history-item" data-his-index="${idx + 1}">
+          ${item.label}
+        </button>
+      `).join('')}
+    </div>
+  `;
+
+  const toggleBtn = wrap.querySelector('.report-history-toggle');
+  const listEl = wrap.querySelector('.report-history-list');
+  if (toggleBtn && listEl) {
+    toggleBtn.addEventListener('click', () => {
+      const isHidden = listEl.classList.contains('hidden');
+      listEl.classList.toggle('hidden', !isHidden);
+      toggleBtn.textContent = isHidden
+        ? `收起历史报告（${older.length}）`
+        : `展开历史报告（${older.length}）`;
+    });
+  }
+
+  wrap.querySelectorAll('.report-history-item').forEach(button => {
+    button.addEventListener('click', () => {
+      const index = Number(button.dataset.hisIndex || '0');
+      const selected = history[index];
+      if (selected) onSelect(selected);
+    });
+  });
+}
+
+function escapeHtmlForReportTail(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderSuggestionTailHtml(suggestions, source) {
+  if (!Array.isArray(suggestions) || suggestions.length === 0) return '';
+
+  const levelClassMap = {
+    performance: 'success',
+    sort: 'info',
+    quality: 'warning',
+    strategy: 'primary',
+    business: 'warning',
+    primary: 'primary',
+    info: 'info',
+    success: 'success',
+    warning: 'warning',
+    danger: 'danger',
+  };
+
+  const renderMd = (text) => {
+    if (!text) return '';
+    return escapeHtmlForReportTail(text)
+      .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+      .replace(/\n/g, '<br>');
+  };
+
+  const cards = suggestions.map((item) => {
+    const level = item?.level || item?.type || 'info';
+    const levelClass = levelClassMap[level] || 'info';
+    const title = escapeHtmlForReportTail(item?.title || '策略建议');
+    const content = renderMd(item?.content || item?.evaluation || item?.diagnosis || '');
+    const details = item?.details
+      ? `<div class="rp-ai-item-details">${renderMd(item.details)}</div>`
+      : '';
+    return `
+      <div class="rp-ai-item ${levelClass}">
+        <div class="rp-ai-item-title">${title}</div>
+        <div class="rp-ai-item-content">${content}</div>
+        ${details}
+      </div>
+    `;
+  }).join('');
+
+  const sourceTextMap = {
+    llm: 'LLM',
+    glm: 'GLM',
+    gpt: 'GPT',
+    ds: 'DeepSeek',
+    llm_fallback: 'LLM调用失败自动兜底',
+    rule_data: 'LLM调用失败自动兜底',
+    fallback_rule_engine: '规则引擎（非LLM）',
+  };
+  const sourceText = sourceTextMap[source] || source;
+  const sourceLabel = sourceText ? `建议来源：${escapeHtmlForReportTail(sourceText)}` : '';
+
+  return `
+    <style>
+      .rp-ai-wrap{margin-top:24px;border:1px solid #e2e8f0;background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);border-radius:12px;padding:16px;}
+      .rp-ai-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #e2e8f0;}
+      .rp-ai-title{font-size:18px;font-weight:700;color:#0f172a;letter-spacing:.2px;}
+      .rp-ai-source{font-size:12px;color:#334155;background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:3px 10px;white-space:nowrap;}
+      .rp-ai-list{display:grid;gap:10px;}
+      .rp-ai-item{padding:13px 14px;border-radius:10px;border-left:4px solid #3b82f6;background:#eff6ff;box-shadow:0 1px 2px rgba(15,23,42,0.06);}
+      .rp-ai-item.success{border-color:#10b981;background:#ecfdf5;}
+      .rp-ai-item.info{border-color:#3b82f6;background:#eff6ff;}
+      .rp-ai-item.warning{border-color:#f59e0b;background:#fffbeb;}
+      .rp-ai-item.danger{border-color:#ef4444;background:#fef2f2;}
+      .rp-ai-item.primary{border-color:#0ea5e9;background:#f0f9ff;}
+      .rp-ai-item-title{font-size:14px;font-weight:700;color:#0f172a;line-height:1.45;margin-bottom:6px;}
+      .rp-ai-item-content{font-size:13px;line-height:1.7;color:#334155;}
+      .rp-ai-item-details{margin-top:8px;padding-top:8px;border-top:1px solid rgba(148,163,184,0.35);font-size:12px;color:#475569;line-height:1.6;}
+      @media (max-width:768px){
+        .rp-ai-wrap{padding:12px;}
+        .rp-ai-head{align-items:flex-start;flex-direction:column;}
+      }
+    </style>
+    <div class="rp-ai-wrap">
+      <div class="rp-ai-head">
+        <div class="rp-ai-title">AI策略建议</div>
+        ${sourceLabel ? `<div class="rp-ai-source">${sourceLabel}</div>` : ''}
+      </div>
+      <div class="rp-ai-list">
+        ${cards}
+      </div>
+    </div>
+  `;
+}
+
+function appendSuggestionsToReport(reportHtml, suggestions, source) {
+  const tailHtml = renderSuggestionTailHtml(suggestions, source);
+  if (!tailHtml) return reportHtml || '';
+
+  const html = reportHtml || '';
+  if (!html.trim()) {
+    return `<div style="padding:16px;">${tailHtml}</div>`;
+  }
+  if (html.includes('</body>')) {
+    return html.replace('</body>', `${tailHtml}</body>`);
+  }
+  return `${html}${tailHtml}`;
+}
+
 function displayModelReportResults(data) {
   // 显示结果区域
   document.getElementById('analysis-result').classList.remove('hidden');
@@ -634,8 +812,27 @@ function displayModelReportResults(data) {
   // 嵌入报告HTML（后端返回字段名为 html_report）
   const frame = document.getElementById('model-report-frame');
   const reportHtml = data.html_report || data.report_html || '';
-  if (frame && reportHtml) {
-    frame.srcdoc = reportHtml;
+  let suggestions = data.ai_suggestion;
+  let suggestionSource = data.ai_suggestion_source || '';
+  if (!suggestions || suggestions.length === 0) {
+    suggestions = data.mode === 'model_correlation' ? generateCorrelationSuggestions(data) : generateBinningSuggestions(data);
+    suggestionSource = 'fallback_rule_engine';
+  }
+  const reportHtmlWithSuggestions = appendSuggestionsToReport(reportHtml, suggestions, suggestionSource);
+  data.report_html = reportHtmlWithSuggestions;
+  data.html_report = reportHtmlWithSuggestions;
+
+  const latestModelEntry = {
+    label: `${new Date().toLocaleString()} · ${data.report_filename || data.mode || '模型报告'}`,
+    html: reportHtmlWithSuggestions,
+    reportUrl: data.report_url || '',
+    taskId: data.task_id || '',
+    filename: data.report_filename || '',
+  };
+  pushReportHistory('model', latestModelEntry);
+  setActiveReport('model', latestModelEntry);
+  if (frame && reportHtmlWithSuggestions) {
+    frame.srcdoc = reportHtmlWithSuggestions;
     // 自动调整 iframe 高度
     frame.onload = function() {
       try {
@@ -650,25 +847,21 @@ function displayModelReportResults(data) {
     frame.src = data.report_url;
   }
 
-  // 保存数据供下载使用
-  currentState.lastTaskId = data.task_id;
-  currentState.reportFilename = data.report_filename || '';
-  currentState.reportHtml = reportHtml;
+  renderReportHistory('model', (entry) => {
+    if (!frame) return;
+    if (entry.html) {
+      frame.srcdoc = entry.html;
+    } else if (entry.reportUrl) {
+      frame.src = entry.reportUrl;
+    }
+    setActiveReport('model', entry);
+  });
 
-  // AI 策略建议：保留在报告下方（已在 legacy container 外部，不会被隐藏）
+  // AI 策略建议改为“写入每份报告尾部”，避免多报告时建议串联
   const suggestionsCard = document.getElementById('suggestions-card');
   if (suggestionsCard) {
-    suggestionsCard.classList.remove('hidden');
+    suggestionsCard.classList.add('hidden');
   }
-
-  // 渲染 AI 策略建议（优先使用 LLM 动态建议，无则降级到规则引擎）
-  let suggestions = data.ai_suggestion;
-  let suggestionSource = data.ai_suggestion_source || '';
-  if (!suggestions || suggestions.length === 0) {
-    suggestions = data.mode === 'model_correlation' ? generateCorrelationSuggestions(data) : generateBinningSuggestions(data);
-    suggestionSource = '';
-  }
-  renderSuggestions(suggestions, suggestionSource);
 
   // 下载按钮事件
   const downloadBtn = document.getElementById('btn-download-report');
@@ -710,8 +903,45 @@ function displayRuleReportResults(data) {
   // 嵌入报告HTML（后端返回字段名为 html_report）
   const frame = document.getElementById('rule-report-frame');
   const reportHtml = data.html_report || data.report_html || '';
-  if (frame && reportHtml) {
-    frame.srcdoc = reportHtml;
+  let suggestions = Array.isArray(data.ai_suggestion) ? data.ai_suggestion : [];
+  let suggestionSource = data.ai_suggestion_source || '';
+  if ((!suggestionSource || suggestionSource === 'fallback') && suggestions.length > 0) {
+    suggestionSource = 'llm';
+  }
+  if (suggestions.length === 0) {
+    suggestions = [{
+      type: 'warning',
+      title: 'AI策略建议暂未返回',
+      content: '本次大模型建议未成功返回，可点击“开始分析”重试一次。',
+      details: (data.ai_suggestion_error || '').toString().slice(0, 120),
+    }];
+    if (!suggestionSource || suggestionSource === 'fallback') {
+      suggestionSource = 'llm';
+    }
+  }
+  if ((suggestionSource === 'rule_data' || suggestionSource === 'llm_fallback') && data.ai_suggestion_error) {
+    suggestions = [{
+      type: 'warning',
+      title: 'LLM调用失败，已自动切换兜底建议',
+      content: '当前展示的是 LLM 失败后的兜底策略建议。请检查模型网络连通性后重试，可恢复为LLM建议。',
+      details: (data.ai_suggestion_error || '').toString().slice(0, 260),
+    }].concat(suggestions);
+  }
+  const reportHtmlWithSuggestions = appendSuggestionsToReport(reportHtml, suggestions, suggestionSource);
+  data.report_html = reportHtmlWithSuggestions;
+  data.html_report = reportHtmlWithSuggestions;
+
+  const latestRuleEntry = {
+    label: `${new Date().toLocaleString()} · ${data.report_filename || '规则报告'}`,
+    html: reportHtmlWithSuggestions,
+    reportUrl: data.report_url || '',
+    taskId: data.task_id || '',
+    filename: data.report_filename || '',
+  };
+  pushReportHistory('rule', latestRuleEntry);
+  setActiveReport('rule', latestRuleEntry);
+  if (frame && reportHtmlWithSuggestions) {
+    frame.srcdoc = reportHtmlWithSuggestions;
     // 自动调整 iframe 高度
     frame.onload = function() {
       try {
@@ -726,25 +956,21 @@ function displayRuleReportResults(data) {
     frame.src = data.report_url;
   }
 
-  // 保存数据供下载使用
-  currentState.lastTaskId = data.task_id;
-  currentState.reportFilename = data.report_filename || '';
-  currentState.reportHtml = reportHtml;
+  renderReportHistory('rule', (entry) => {
+    if (!frame) return;
+    if (entry.html) {
+      frame.srcdoc = entry.html;
+    } else if (entry.reportUrl) {
+      frame.src = entry.reportUrl;
+    }
+    setActiveReport('rule', entry);
+  });
 
-  // AI 策略建议
+  // AI 策略建议改为“写入每份报告尾部”，避免多报告时建议串联
   const suggestionsCard = document.getElementById('suggestions-card');
   if (suggestionsCard) {
-    suggestionsCard.classList.remove('hidden');
+    suggestionsCard.classList.add('hidden');
   }
-
-  // 渲染 AI 策略建议
-  let suggestions = data.ai_suggestion;
-  let suggestionSource = data.ai_suggestion_source || '';
-  if (!suggestions || suggestions.length === 0) {
-    suggestions = generateRuleSuggestions(data);
-    suggestionSource = '';
-  }
-  renderSuggestions(suggestions, suggestionSource);
 
   // 下载按钮事件
   const downloadBtn = document.getElementById('btn-download-rule-report');
@@ -757,7 +983,8 @@ function displayRuleReportResults(data) {
 
 // 下载规则分析报告
 function downloadRuleReport(data) {
-  const html = data.report_html || currentState.reportHtml || '';
+  const active = (currentState.activeReport && currentState.activeReport.rule) || {};
+  const html = active.html || currentState.reportHtml || data.report_html || '';
   if (!html) {
     showToast('报告内容为空，无法下载', 'error');
     return;
@@ -767,7 +994,7 @@ function downloadRuleReport(data) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = data.report_filename || `规则分析报告_${new Date().toISOString().slice(0,10)}.html`;
+  a.download = active.filename || currentState.reportFilename || data.report_filename || `规则分析报告_${new Date().toISOString().slice(0,10)}.html`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -902,7 +1129,8 @@ function generateRuleSuggestions(data) {
 
 // 下载模型分析报告
 function downloadModelReport(data) {
-  const html = data.report_html || currentState.reportHtml || '';
+  const active = (currentState.activeReport && currentState.activeReport.model) || {};
+  const html = active.html || currentState.reportHtml || data.report_html || '';
   if (!html) {
     showToast('报告内容为空，无法下载', 'error');
     return;
@@ -912,7 +1140,7 @@ function downloadModelReport(data) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = data.report_filename || `模型分析报告_${new Date().toISOString().slice(0,10)}.html`;
+  a.download = active.filename || currentState.reportFilename || data.report_filename || `模型分析报告_${new Date().toISOString().slice(0,10)}.html`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1554,7 +1782,7 @@ function generateBinningSuggestions(data) {
   
   // 【洞察6】欺诈检测建议（首贷场景）
   if (modelSummary.length >= 1) {
-    const欺诈Score = (topModel?.auc || 0) < 0.60 ? '欺诈检测能力偏弱' : '欺诈检测能力尚可';
+    const 欺诈Score = (topModel?.auc || 0) < 0.60 ? '欺诈检测能力偏弱' : '欺诈检测能力尚可';
     suggestions.push({
       type: 'strategy',
       title: '🔍 欺诈检测策略建议',
@@ -1887,7 +2115,7 @@ function generateCorrelationSuggestions(data) {
   
   // 【洞察7】欺诈检测建议
   if (topModel) {
-    const欺诈Ability = (topModel?.auc || 0) < 0.60 ? '欺诈检测能力偏弱' : '欺诈检测能力尚可';
+    const 欺诈Ability = (topModel?.auc || 0) < 0.60 ? '欺诈检测能力偏弱' : '欺诈检测能力尚可';
     suggestions.push({
       type: 'strategy',
       title: '🔍 欺诈检测策略建议',
@@ -4326,3 +4554,4 @@ function escapeHtml(text) {
     .replace(/'/g, '&#039;')
     .replace(/\n/g, '<br>');
 }
+

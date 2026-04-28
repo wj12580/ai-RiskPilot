@@ -54,7 +54,11 @@ echo    服务启动中，请稍候...
 echo    启动成功后请访问: http://127.0.0.1:5000
 echo ==========================================
 echo.
+echo [INFO] Browser will be opened automatically.
 
+set APP_URL=http://127.0.0.1:5000
+echo [INFO] Auto open browser: %APP_URL%
+start "" /b powershell -NoProfile -Command "Start-Sleep -Seconds 2; Start-Process '%APP_URL%'"
 python app.py
 
 REM 如果应用退出，暂停显示错误信息

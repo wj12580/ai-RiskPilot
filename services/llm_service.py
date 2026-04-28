@@ -16,6 +16,7 @@ import uuid
 import base64
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # ── 委托给 agent_router（统一混合路由）─────────────────────────────────────
 from services.agent_router import (
@@ -518,6 +519,7 @@ class ModelEngineerAgent:
                 biz_context: Dict = None) -> Dict[str, Any]:
         """
         执行金融建模师的专业分析
+        【优化】bin_optimize 改为 ThreadPoolExecutor 并发调用，消除串行等待
         """
         biz_context = biz_context or {}
         analysis_results = {}
@@ -529,16 +531,31 @@ class ModelEngineerAgent:
             )
             analysis_results['model_correlation'] = corr_result
         
-        # 2. 对每个模型做分箱分析
-        bin_results = []
-        for score_col in score_cols[:50]:  # 最多分析50个模型
-            bin_result = SkillCaller.bin_optimize(
-                file_path, target_col, score_col, n_bins, file_type
-            )
-            bin_results.append({
-                'model': score_col,
-                'result': bin_result
-            })
+        # 2. 对每个模型做分箱分析（并发）
+        target_score_cols = score_cols[:50]
+        bin_results_map: Dict[str, Any] = {}
+        max_workers = min(8, len(target_score_cols)) if target_score_cols else 1
+
+        def _bin_one(sc):
+            return sc, SkillCaller.bin_optimize(file_path, target_col, sc, n_bins, file_type)
+
+        if max_workers <= 1:
+            for sc in target_score_cols:
+                k, v = _bin_one(sc)
+                bin_results_map[k] = v
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_bin_one, sc): sc for sc in target_score_cols}
+                for future in as_completed(futures):
+                    try:
+                        k, v = future.result()
+                        bin_results_map[k] = v
+                    except Exception as exc:
+                        sc = futures[future]
+                        bin_results_map[sc] = {'success': False, 'error': str(exc)}
+
+        # 保持原顺序
+        bin_results = [{'model': sc, 'result': bin_results_map[sc]} for sc in target_score_cols]
         analysis_results['bin_analysis'] = bin_results
         
         # 3. 收集模型分析数据
@@ -1508,6 +1525,55 @@ def check_llm_config() -> Dict[str, Any]:
             'recommendation': '备用模型（兜底）' if status.get('ds', {}).get('configured') else '建议配置DeepSeek API Key',
         },
         'router_stats':  status.get('stats', {}),
+        'agent_available': True,
+        'multi_expert_available': True,
+    }
+
+
+def check_llm_config() -> Dict[str, Any]:
+    """检查大模型配置状态（GPT优先）。"""
+    status = check_router_status()
+    gpt_cfg = status.get('gpt', {}).get('configured', False)
+    glm_cfg = status.get('glm', {}).get('configured', False)
+    ds_cfg = status.get('ds', {}).get('configured', False)
+
+    if glm_cfg:
+        active_base_url = status.get('glm', {}).get('base_url', LLM_API_URL)
+        active_model = status.get('glm', {}).get('model', LLM_MODEL)
+    elif gpt_cfg:
+        active_base_url = status.get('gpt', {}).get('base_url', LLM_API_URL)
+        active_model = status.get('gpt', {}).get('model', LLM_MODEL)
+    elif ds_cfg:
+        active_base_url = status.get('ds', {}).get('base_url', LLM_API_URL)
+        active_model = status.get('ds', {}).get('model', LLM_MODEL)
+    else:
+        active_base_url = LLM_API_URL
+        active_model = LLM_MODEL
+
+    return {
+        'configured': gpt_cfg or glm_cfg or ds_cfg,
+        'api_url': active_base_url,
+        'model': active_model,
+        'message': status.get('recommendation', '状态未知'),
+        'gpt_status': {
+            'configured': gpt_cfg,
+            'model': status.get('gpt', {}).get('model', ''),
+            'cost_per_m': '按网关套餐',
+            'recommendation': '主力模型（优先）' if gpt_cfg else '请配置 GPT API Key',
+        },
+        'glm_status': {
+            'configured': glm_cfg,
+            'model': status.get('glm', {}).get('model', ''),
+            'cost_per_m': '免费',
+            'recommendation': '免费兜底模型' if glm_cfg else '请配置 GLM API Key',
+        },
+        'ds_status': {
+            'configured': ds_cfg,
+            'model': status.get('ds', {}).get('model', ''),
+            'cost_per_m': '输入1元/M，输出8元/M',
+            'recommendation': '末级兜底' if ds_cfg else '建议配置 DeepSeek API Key',
+        },
+        'router_stats': status.get('stats', {}),
         'agent_available': True,
         'multi_expert_available': True,
     }

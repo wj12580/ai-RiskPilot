@@ -26,6 +26,7 @@ from scipy.spatial.distance import squareform
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_curve, auc as sk_auc, roc_auc_score
 from sklearn.preprocessing import StandardScaler
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 warnings.filterwarnings('ignore')
 
@@ -179,38 +180,29 @@ class MultiModelAnalyzer:
         互补性矩阵：
         对每对模型(A,B)，以各自分位数20%为"拒绝"，
         计算 A拒B不拒 + B拒A不拒 的比例 = 互补性
+        【优化】用 numpy 向量化替换 O(N²) 双层循环
         """
-        records = []
         df = self.df.dropna(subset=self.score_cols + [self.target_col])
-        y = df[self.target_col].values
+        n_models = len(self.score_cols)
 
-        for i, col_a in enumerate(self.score_cols):
-            s_a = df[col_a].values
-            q20_a = np.percentile(s_a, 20)
-            reject_a = s_a < q20_a  # 低分拒绝
+        # 一次性计算所有模型的 20% 分位拒绝矩阵 (n_samples × n_models, bool)
+        score_mat = df[self.score_cols].values  # (n, m)
+        q20 = np.percentile(score_mat, 20, axis=0)  # (m,)
+        reject_mat = score_mat < q20  # (n, m) bool
 
-            for j, col_b in enumerate(self.score_cols):
-                if i >= j:
-                    continue
-                s_b = df[col_b].values
-                q20_b = np.percentile(s_b, 20)
-                reject_b = s_b < q20_b
-
-                # A拒B不拒
-                a_not_b = reject_a & (~reject_b)
-                # B拒A不拒
-                b_not_a = reject_b & (~reject_a)
-
+        records = []
+        for i in range(n_models):
+            for j in range(i + 1, n_models):
+                a_not_b = reject_mat[:, i] & (~reject_mat[:, j])
+                b_not_a = reject_mat[:, j] & (~reject_mat[:, i])
                 comp_a = a_not_b.mean()
                 comp_b = b_not_a.mean()
-                comp_total = comp_a + comp_b
-
                 records.append({
-                    'model_a': col_a,
-                    'model_b': col_b,
+                    'model_a': self.score_cols[i],
+                    'model_b': self.score_cols[j],
                     'a_reject_b_not': round(comp_a, 4),
                     'b_reject_a_not': round(comp_b, 4),
-                    'complementarity': round(comp_total, 4),
+                    'complementarity': round(comp_a + comp_b, 4),
                 })
 
         self._complement = pd.DataFrame(records).sort_values(
@@ -292,15 +284,32 @@ class MultiModelAnalyzer:
     # ── 图表生成 ───────────────────────────────────────────────────────────────
 
     def _generate_all_charts(self, perf, corr, order, complement, metrics) -> dict:
-        """生成所有图片，返回 {name: base64}"""
+        """
+        生成所有图片，返回 {name: base64}
+        【优化】ThreadPoolExecutor 并发生成 7 张图，matplotlib 线程安全（每个图独立 fig/ax）
+        """
+        task_map = {
+            '01_模型基础性能':   (self._plot_performance_bubble,    (perf,)),
+            '02_相关性热力图':   (self._plot_correlation_heatmap,   (corr, order)),
+            '03_聚类树状图':     (self._plot_dendrogram,            (corr, order)),
+            '04_模型互补性矩阵': (self._plot_complementarity_matrix,(complement,)),
+            '05_串行策略效果':   (self._plot_strategy_chart,        (metrics,)),
+            '06_ROC曲线对比':    (self._plot_roc_curves,            (perf,)),
+            '07_分数分布':       (self._plot_score_distributions,   (perf,)),
+        }
+
         charts = {}
-        charts['01_模型基础性能'] = self._plot_performance_bubble(perf)
-        charts['02_相关性热力图'] = self._plot_correlation_heatmap(corr, order)
-        charts['03_聚类树状图']   = self._plot_dendrogram(corr, order)
-        charts['04_模型互补性矩阵'] = self._plot_complementarity_matrix(complement)
-        charts['05_串行策略效果']  = self._plot_strategy_chart(metrics)
-        charts['06_ROC曲线对比']  = self._plot_roc_curves(perf)
-        charts['07_分数分布']     = self._plot_score_distributions(perf)
+        with ThreadPoolExecutor(max_workers=min(7, len(task_map))) as executor:
+            futures = {
+                executor.submit(fn, *args): name
+                for name, (fn, args) in task_map.items()
+            }
+            for future in as_completed(futures):
+                name = futures[future]
+                try:
+                    charts[name] = future.result()
+                except Exception:
+                    charts[name] = ''
         return charts
 
     def _fig_to_b64(self, fig) -> str:

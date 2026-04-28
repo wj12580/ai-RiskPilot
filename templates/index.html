@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RiskPilot - 风控策略分析师AI助手</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='20260427c') }}">
   <!-- 引入图表库 -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
@@ -276,6 +276,7 @@
               </div>
             </div>
             <div class="card-body" style="padding:0;overflow:hidden;border-radius:0 0 12px 12px;">
+              <div id="model-report-history-wrap" class="report-history-wrap hidden"></div>
               <iframe id="model-report-frame"
                 style="width:100%;border:none;min-height:800px;background:#f0f4f8;"
                 sandbox="allow-scripts allow-same-origin"></iframe>
@@ -292,6 +293,7 @@
               </div>
             </div>
             <div class="card-body" style="padding:0;overflow:hidden;border-radius:0 0 12px 12px;">
+              <div id="rule-report-history-wrap" class="report-history-wrap hidden"></div>
               <iframe id="rule-report-frame"
                 style="width:100%;border:none;min-height:800px;background:#f0f4f8;"
                 sandbox="allow-scripts allow-same-origin"></iframe>
@@ -615,8 +617,6 @@
         </div>
       </section>
 
-    </main>
-
       <!-- ========== 风控知识库+问答助手页面 ========== -->
       <section id="page-knowledge" class="page-section" style="display:none;">
         <div class="page-header">
@@ -624,14 +624,14 @@
           <p class="page-desc">输入风控相关问题，AI即时解答——指标计算、策略效果、模型原理，一问即答</p>
         </div>
 
-        <div style="display:grid;grid-template-columns:320px 1fr;gap:24px;align-items:start;">
+        <div class="knowledge-layout">
           <!-- 左侧：常见问题分类 -->
           <div>
-            <div class="card" style="margin-bottom:0;">
+            <div class="card knowledge-topic-card">
               <div class="card-header">
                 <h3 class="card-title">🔖 常见问题</h3>
               </div>
-              <div class="card-body" style="padding:16px;">
+              <div class="card-body knowledge-topic-body">
                 <div id="knowledge-topics-container">
                   <div style="color:#9ca3af;font-size:0.9rem;padding:10px 0;text-align:center;">加载中...</div>
                 </div>
@@ -641,8 +641,8 @@
 
           <!-- 右侧：对话区 -->
           <div>
-            <div class="card" style="margin-bottom:16px;">
-              <div class="card-header" style="padding:16px 20px;">
+            <div class="card knowledge-chat-card">
+              <div class="card-header knowledge-chat-header">
                 <h3 class="card-title">💬 AI 问答</h3>
                 <button class="btn btn-secondary btn-sm" id="btn-clear-chat" title="清空对话">🗑️ 清空</button>
               </div>
@@ -665,7 +665,7 @@
                   placeholder="输入你的风控问题... (Ctrl+Enter 发送)"
                   rows="3"
                 ></textarea>
-                <div style="display:flex;justify-content:flex-end;margin-top:10px;gap:10px;">
+                <div class="knowledge-input-toolbar">
                   <span id="knowledge-char-count" style="align-self:center;font-size:0.8rem;color:#9ca3af;">0 / 2000</span>
                   <button class="btn btn-primary" id="btn-ask-knowledge">
                     <span>🚀</span> 发送问题
@@ -1068,6 +1068,6 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/app.js', v='20260428d') }}"></script>
 </body>
 </html>

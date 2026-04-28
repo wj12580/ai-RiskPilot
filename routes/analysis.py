@@ -16,6 +16,8 @@ import json
 import uuid
 import base64
 import pandas as pd
+from collections import OrderedDict
+from threading import RLock
 from flask import Blueprint, request, jsonify, current_app, send_file
 from datetime import datetime
 import io
@@ -23,7 +25,11 @@ import io
 from models.database import db
 from models.analysis_task import AnalysisTask
 from services.analysis_service import run_analysis
-from services.suggestion_service import generate_suggestion, generate_llm_dynamic_suggestion
+from services.suggestion_service import (
+    generate_suggestion,
+    generate_llm_dynamic_suggestion,
+    generate_rule_quick_suggestions,
+)
 from services.llm_service import (
     generate_llm_suggestion, check_llm_config, agent_analysis, multi_expert_analysis
 )
@@ -41,10 +47,161 @@ from services.rules_analysis_service import (
 analysis_bp = Blueprint('analysis', __name__)
 
 ALLOWED_EXTENSIONS = {'csv', 'xlsx', 'xls'}
+DATAFRAME_CACHE_MAX_ITEMS = 8
+MODEL_LLM_SUGGESTION_TIMEOUT_SECONDS = 6
+RULE_LLM_SUGGESTION_TIMEOUT_SECONDS = 22
+RULE_LLM_RETRY_TIMEOUT_SECONDS = 14
+RULE_LLM_MAX_RULES_FOR_PROMPT = 10
+RULE_LLM_MAX_BINS_PER_RULE = 4
+_DATAFRAME_CACHE = OrderedDict()
+_DATAFRAME_CACHE_LOCK = RLock()
 
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _normalize_file_type(file_path: str, file_type: str = '') -> str:
+    normalized = (file_type or '').lower().strip()
+    if normalized in ALLOWED_EXTENSIONS:
+        return normalized
+    ext = os.path.splitext(file_path)[1].lower().lstrip('.')
+    return ext if ext in ALLOWED_EXTENSIONS else 'csv'
+
+
+def _build_dataframe_cache_key(file_path: str, file_type: str):
+    stat = os.stat(file_path)
+    return (os.path.abspath(file_path), file_type, stat.st_mtime_ns, stat.st_size)
+
+
+def _read_dataframe(file_path: str, file_type: str = '', nrows: int = None, use_cache: bool = True) -> pd.DataFrame:
+    normalized_type = _normalize_file_type(file_path, file_type)
+    safe_nrows = int(nrows) if nrows else None
+    if safe_nrows is not None and safe_nrows <= 0:
+        safe_nrows = None
+
+    cache_key = None
+    if use_cache:
+        try:
+            cache_key = _build_dataframe_cache_key(file_path, normalized_type)
+        except OSError:
+            cache_key = None
+
+    df = None
+    if use_cache and cache_key is not None:
+        with _DATAFRAME_CACHE_LOCK:
+            df = _DATAFRAME_CACHE.get(cache_key)
+            if df is not None:
+                _DATAFRAME_CACHE.move_to_end(cache_key)
+
+    if df is None:
+        if normalized_type == 'csv':
+            df = pd.read_csv(file_path)
+        else:
+            df = pd.read_excel(file_path)
+
+        if use_cache and cache_key is not None:
+            with _DATAFRAME_CACHE_LOCK:
+                _DATAFRAME_CACHE[cache_key] = df
+                _DATAFRAME_CACHE.move_to_end(cache_key)
+                while len(_DATAFRAME_CACHE) > DATAFRAME_CACHE_MAX_ITEMS:
+                    _DATAFRAME_CACHE.popitem(last=False)
+
+    if safe_nrows is not None:
+        return df.head(safe_nrows).copy()
+    return df
+
+
+def _build_rule_llm_payload(rule_result: dict) -> dict:
+    """
+    构造规则分析的轻量 LLM 输入，避免全量分箱导致超时。
+    仅抽取高信息密度字段，不改变分析主逻辑。
+    """
+    def _to_float(value, default=0.0):
+        try:
+            if isinstance(value, str):
+                text = value.strip().replace('%', '')
+                if text == '':
+                    return float(default)
+                parsed = float(text)
+                return parsed / 100 if '%' in value else parsed
+            return float(value)
+        except Exception:
+            return float(default)
+
+    def _to_int(value, default=0):
+        try:
+            return int(float(value))
+        except Exception:
+            return int(default)
+
+    data_summary = rule_result.get('data_summary', {}) if isinstance(rule_result, dict) else {}
+    rule_binning = rule_result.get('rule_binning', {}) if isinstance(rule_result, dict) else {}
+    user_profile = rule_result.get('user_profile', {}) if isinstance(rule_result, dict) else {}
+
+    compact_rule_binning = {}
+    if isinstance(rule_binning, dict):
+        ranked_rules = []
+        for rule_name, bin_data in rule_binning.items():
+            bins = (bin_data or {}).get('bins', []) if isinstance(bin_data, dict) else []
+            peak_lift = 0.0
+            peak_bad_rate = 0.0
+            for b in bins:
+                try:
+                    peak_lift = max(peak_lift, _to_float((b or {}).get('lift', 0), 0))
+                    peak_bad_rate = max(peak_bad_rate, _to_float((b or {}).get('bad_rate', 0), 0))
+                except Exception:
+                    continue
+            ranked_rules.append((rule_name, peak_lift, peak_bad_rate, bin_data))
+
+        ranked_rules.sort(key=lambda item: (item[1], item[2]), reverse=True)
+        for rule_name, _, _, bin_data in ranked_rules[:RULE_LLM_MAX_RULES_FOR_PROMPT]:
+            bins = list((bin_data or {}).get('bins', []) or [])
+            bins.sort(
+                key=lambda x: (
+                    _to_float((x or {}).get('lift', 0), 0),
+                    _to_float((x or {}).get('bad_rate', 0), 0),
+                    _to_float((x or {}).get('count', 0), 0),
+                ),
+                reverse=True
+            )
+            compact_rule_binning[rule_name] = {
+                'rule_name': (bin_data or {}).get('rule_name', rule_name),
+                'unique_count': (bin_data or {}).get('unique_count', 0),
+                'bin_type': (bin_data or {}).get('bin_type', ''),
+                'is_numeric': (bin_data or {}).get('is_numeric', False),
+                'bins': bins[:RULE_LLM_MAX_BINS_PER_RULE],
+            }
+
+    def _top_items(items, n=8, reverse=True):
+        if not isinstance(items, list):
+            return []
+        return sorted(
+            items,
+            key=lambda x: (
+                _to_float((x or {}).get('lift', 0), 0),
+                _to_float((x or {}).get('sample_count', 0), 0),
+            ),
+            reverse=reverse
+        )[:n]
+
+    compact_user_profile = {
+        'overall_bad_rate': _to_float((user_profile or {}).get('overall_bad_rate', 0), 0),
+        'total_samples': _to_int((user_profile or {}).get('total_samples', 0), 0),
+        'good_samples': _to_int((user_profile or {}).get('good_samples', 0), 0),
+        'bad_samples': _to_int((user_profile or {}).get('bad_samples', 0), 0),
+        'good_rules': _top_items((user_profile or {}).get('good_rules', []), n=10, reverse=False),
+        'bad_rules': _top_items((user_profile or {}).get('bad_rules', []), n=10, reverse=True),
+        'good_combinations': _top_items((user_profile or {}).get('good_combinations', []), n=8, reverse=False),
+        'bad_combinations': _top_items((user_profile or {}).get('bad_combinations', []), n=8, reverse=True),
+    }
+
+    return {
+        'rule_analysis': True,
+        'data_summary': data_summary,
+        'rule_binning': compact_rule_binning,
+        'user_profile': compact_user_profile,
+    }
 
 
 # ── 检查大模型配置 ────────────────────────────────────────────────────────────
@@ -77,10 +234,7 @@ def get_column_values():
     ext = file_id.rsplit('.', 1)[-1].lower() if '.' in file_id else 'csv'
     
     try:
-        if ext == 'csv':
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
+        df = _read_dataframe(file_path, file_type=ext)
         
         if col_name not in df.columns:
             return jsonify({'error': f'列 "{col_name}" 不存在'}), 400
@@ -113,16 +267,9 @@ def upload_file():
 
     # 预读取列信息
     try:
-        if ext == 'csv':
-            df = pd.read_csv(save_path, nrows=5)
-        else:
-            df = pd.read_excel(save_path, nrows=5)
-        columns = list(df.columns)
+        full_df = _read_dataframe(save_path, file_type=ext)
+        columns = list(full_df.columns)
         # 统计行数
-        if ext == 'csv':
-            full_df = pd.read_csv(save_path)
-        else:
-            full_df = pd.read_excel(save_path)
         n_rows = len(full_df)
     except Exception as e:
         return jsonify({'error': f'文件解析失败：{str(e)}'}), 400
@@ -194,10 +341,7 @@ def expert_analysis():
 
     try:
         # 读取数据
-        if file_type == 'csv':
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
+        df = _read_dataframe(file_path, file_type=file_type)
 
         # 渠道筛选
         if channel_col and channel_values and channel_col in df.columns:
@@ -343,10 +487,7 @@ def model_binning_analysis():
 
     try:
         # 读取数据
-        if file_type == 'csv':
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
+        df = _read_dataframe(file_path, file_type=file_type)
 
         # 渠道筛选
         if channel_col and channel_values and channel_col in df.columns:
@@ -406,18 +547,35 @@ def model_binning_analysis():
         db.session.add(task)
         db.session.commit()
 
-        # 生成 LLM 动态策略建议
-        llm_suggestion = generate_llm_dynamic_suggestion(
-            analysis_data={
-                'model_summary': binning_result.get('summary_df', []),
-                'data_summary': binning_result.get('data_summary', {}),
-                'all_results': binning_result.get('all_results', []),
-            },
-            biz_scenario=biz_scenario,
-            biz_country=biz_country,
-            biz_module=biz_module,
-        )
-        ai_suggestions = llm_suggestion.get('suggestions', [])
+        # 生成 LLM 动态策略建议（异步并发：不阻塞主分析结果返回）
+        llm_suggestion = {'success': False, 'source': 'fallback', 'suggestions': []}
+        ai_suggestions = []
+        try:
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                generate_llm_dynamic_suggestion,
+                {
+                    'model_summary': binning_result.get('summary_df', []),
+                    'data_summary': binning_result.get('data_summary', {}),
+                    'all_results': binning_result.get('all_results', []),
+                },
+                biz_scenario,
+                biz_country,
+                biz_module,
+            )
+            try:
+                llm_suggestion = future.result(timeout=MODEL_LLM_SUGGESTION_TIMEOUT_SECONDS)
+                ai_suggestions = llm_suggestion.get('suggestions', [])
+            except FuturesTimeoutError:
+                future.cancel()
+                llm_suggestion = {'success': False, 'source': 'fallback', 'suggestions': []}
+                ai_suggestions = []
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            llm_suggestion = {'success': False, 'source': 'fallback', 'suggestions': []}
+            ai_suggestions = []
 
         return jsonify({
             'task_id': task.id,
@@ -477,10 +635,7 @@ def model_correlation_analysis():
 
     try:
         # 读取数据
-        if file_type == 'csv':
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
+        df = _read_dataframe(file_path, file_type=file_type)
 
         # 渠道筛选
         if channel_col and channel_values and channel_col in df.columns:
@@ -540,20 +695,37 @@ def model_correlation_analysis():
         db.session.add(task)
         db.session.commit()
 
-        # 生成 LLM 动态策略建议
-        llm_suggestion = generate_llm_dynamic_suggestion(
-            analysis_data={
-                'performance': corr_result.get('performance', []),
-                'correlation': corr_result.get('correlation', []),
-                'complementarity': corr_result.get('complementarity', []),
-                'strategy_metrics': corr_result.get('strategy_metrics', {}),
-                'data_summary': corr_result.get('data_summary', {}),
-            },
-            biz_scenario=biz_scenario,
-            biz_country=biz_country,
-            biz_module=biz_module,
-        )
-        ai_suggestions = llm_suggestion.get('suggestions', [])
+        # 生成 LLM 动态策略建议（异步并发：不阻塞主分析结果返回）
+        llm_suggestion = {'success': False, 'source': 'fallback', 'suggestions': []}
+        ai_suggestions = []
+        try:
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                generate_llm_dynamic_suggestion,
+                {
+                    'performance': corr_result.get('performance', []),
+                    'correlation': corr_result.get('correlation', []),
+                    'complementarity': corr_result.get('complementarity', []),
+                    'strategy_metrics': corr_result.get('strategy_metrics', {}),
+                    'data_summary': corr_result.get('data_summary', {}),
+                },
+                biz_scenario,
+                biz_country,
+                biz_module,
+            )
+            try:
+                llm_suggestion = future.result(timeout=MODEL_LLM_SUGGESTION_TIMEOUT_SECONDS)
+                ai_suggestions = llm_suggestion.get('suggestions', [])
+            except FuturesTimeoutError:
+                future.cancel()
+                llm_suggestion = {'success': False, 'source': 'fallback', 'suggestions': []}
+                ai_suggestions = []
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            llm_suggestion = {'success': False, 'source': 'fallback', 'suggestions': []}
+            ai_suggestions = []
 
         return jsonify({
             'task_id': task.id,
@@ -670,10 +842,7 @@ def run():
         return jsonify({'error': '文件不存在，请重新上传'}), 400
 
     try:
-        if file_type == 'csv':
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
+        df = _read_dataframe(file_path, file_type=file_type)
     except Exception as e:
         return jsonify({'error': f'读取文件失败：{str(e)}'}), 400
 
@@ -921,10 +1090,7 @@ def rule_analysis():
 
     try:
         # 读取数据
-        if file_type == 'csv':
-            df = pd.read_csv(file_path)
-        else:
-            df = pd.read_excel(file_path)
+        df = _read_dataframe(file_path, file_type=file_type)
 
         # 渠道筛选
         filtered_note = ''
@@ -991,19 +1157,74 @@ def rule_analysis():
         db.session.add(task)
         db.session.commit()
 
-        # 生成 LLM 动态策略建议（传入规则分析数据）
-        llm_suggestion = generate_llm_dynamic_suggestion(
-            analysis_data={
-                'rule_analysis': True,
-                'data_summary': rule_result.get('data_summary', {}),
-                'rule_binning': rule_result.get('rule_binning', {}),
-                'user_profile': rule_result.get('user_profile', {}),
-            },
-            biz_scenario=biz_scenario,
-            biz_country=biz_country,
-            biz_module=biz_module,
-        )
-        ai_suggestions = llm_suggestion.get('suggestions', [])
+        # 生成 LLM 动态策略建议（并发 + 超时保护，避免拖慢规则分析主流程）
+        llm_suggestion = {'success': False, 'source': 'fallback', 'suggestions': [], 'error': ''}
+        ai_suggestions = []
+        llm_input_payload = _build_rule_llm_payload(rule_result)
+        try:
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(
+                generate_llm_dynamic_suggestion,
+                llm_input_payload,
+                biz_scenario,
+                biz_country,
+                biz_module,
+            )
+            try:
+                llm_suggestion = future.result(timeout=RULE_LLM_SUGGESTION_TIMEOUT_SECONDS)
+                ai_suggestions = llm_suggestion.get('suggestions', [])
+            except FuturesTimeoutError:
+                future.cancel()
+                llm_suggestion = {'success': False, 'source': 'fallback', 'suggestions': [], 'error': 'timeout'}
+                ai_suggestions = []
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            llm_suggestion = {'success': False, 'source': 'fallback', 'suggestions': [], 'error': 'exception'}
+            ai_suggestions = []
+
+        # 二次重试：无论首次失败原因，均尝试更轻量的 LLM 输入，再给一次机会
+        if not ai_suggestions:
+            try:
+                from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+                retry_payload = {
+                    'rule_analysis': True,
+                    'data_summary': llm_input_payload.get('data_summary', {}),
+                    'rule_binning': {},
+                    'user_profile': llm_input_payload.get('user_profile', {}),
+                }
+                retry_executor = ThreadPoolExecutor(max_workers=1)
+                retry_future = retry_executor.submit(
+                    generate_llm_dynamic_suggestion,
+                    retry_payload,
+                    biz_scenario,
+                    biz_country,
+                    biz_module,
+                )
+                try:
+                    retry_suggestion = retry_future.result(timeout=RULE_LLM_RETRY_TIMEOUT_SECONDS)
+                    retry_items = retry_suggestion.get('suggestions', []) if isinstance(retry_suggestion, dict) else []
+                    if retry_items:
+                        llm_suggestion = retry_suggestion
+                        ai_suggestions = retry_items
+                    elif isinstance(retry_suggestion, dict):
+                        llm_suggestion = retry_suggestion
+                except FuturesTimeoutError:
+                    retry_future.cancel()
+                    llm_suggestion = {'success': False, 'source': 'fallback', 'suggestions': [], 'error': 'retry_timeout'}
+                finally:
+                    retry_executor.shutdown(wait=False, cancel_futures=True)
+            except Exception:
+                pass
+
+        # 兜底保障：无论 LLM 是否失败，都确保规则分析返回可展示建议
+        if not ai_suggestions:
+            ai_suggestions = generate_rule_quick_suggestions(llm_input_payload)
+            current_source = (llm_suggestion.get('source') or '').strip()
+            # 保留“LLM优先”的语义：当模型调用失败时，标识为 llm_fallback，而不是 rule_data。
+            if current_source in ('', 'fallback', 'rule_data'):
+                llm_suggestion['source'] = 'llm_fallback'
 
         return jsonify({
             'task_id': task.id,
@@ -1020,6 +1241,7 @@ def rule_analysis():
             'report_html': html_report,
             'ai_suggestion': ai_suggestions,
             'ai_suggestion_source': llm_suggestion.get('source', 'fallback'),
+            'ai_suggestion_error': llm_suggestion.get('error', ''),
         })
 
     except Exception as e:
@@ -1046,10 +1268,7 @@ def get_rule_columns():
         return jsonify({'error': '文件不存在'}), 400
     
     try:
-        if file_type == 'csv':
-            df = pd.read_csv(file_path, nrows=100)
-        else:
-            df = pd.read_excel(file_path, nrows=100)
+        df = _read_dataframe(file_path, file_type=file_type, nrows=100)
         
         # 自动识别规则列：排除目标列、ID列，保留数值型或标准标记型的列
         exclude_patterns = ['label', 'target', 'overdue', 'y', 'flag', 'id', 'customer', 'date', 'time', 'score', 'predict', 'prob']

@@ -14,6 +14,7 @@ import base64
 import warnings
 import numpy as np
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -21,6 +22,7 @@ from scipy.cluster.hierarchy import linkage, dendrogram, fcluster
 from scipy.spatial.distance import squareform
 from scipy.stats import spearmanr
 from sklearn.metrics import roc_curve, auc as sk_auc, roc_auc_score
+from services.model_binning_service import equal_freq_binning, build_model_decision_tree
 
 warnings.filterwarnings('ignore')
 
@@ -29,10 +31,53 @@ plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'WenQuanYi Micro
 plt.rcParams['axes.unicode_minus'] = False
 
 
+def _compute_single_model_performance(
+    df: pd.DataFrame,
+    target_col: str,
+    col: str,
+    n_total: int,
+) -> dict:
+    """单模型性能计算任务（供并发调用）。"""
+    tmp = df[[col, target_col]].dropna()
+    if len(tmp) < 10:
+        return {}
+
+    y = tmp[target_col].values
+    s = tmp[col].values
+
+    max_score = np.max(s)
+    adjusted_score = -s if max_score > 1 else s
+
+    try:
+        auc = roc_auc_score(y, adjusted_score)
+    except Exception:
+        auc = 0.5
+
+    try:
+        fpr, tpr, _ = roc_curve(y, adjusted_score)
+        ks = float(max(tpr - fpr))
+    except Exception:
+        ks = 0.0
+
+    bad_unique = np.unique(y)
+    bad_rate = float(np.mean(y == 1)) if 1 in bad_unique else (
+        float(np.mean(y == -1)) if -1 in bad_unique else float(y.mean())
+    )
+
+    return {
+        'model': col,
+        'coverage': round(len(tmp) / n_total, 4),
+        'auc': round(auc, 4),
+        'ks': round(ks, 4),
+        'bad_rate': round(bad_rate, 4),
+        'n': len(tmp),
+    }
+
+
 def _fig_to_b64(fig) -> str:
     """将图表转换为 base64"""
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight',
+    fig.savefig(buf, format='png', dpi=120, bbox_inches='tight',
                 facecolor='white', edgecolor='none')
     buf.seek(0)
     img_b64 = base64.b64encode(buf.read()).decode('utf-8')
@@ -42,50 +87,33 @@ def _fig_to_b64(fig) -> str:
 
 def compute_model_performance(df: pd.DataFrame, target_col: str, score_cols: list) -> pd.DataFrame:
     """计算各模型的覆盖率 / AUC / KS / 逾期率"""
-    records = []
     n_total = len(df)
-    
-    for col in score_cols:
-        tmp = df[[col, target_col]].dropna()
-        if len(tmp) < 10:
-            continue
-        y = tmp[target_col].values
-        s = tmp[col].values
+    if not score_cols:
+        return pd.DataFrame()
 
-        # 根据分数范围判断风险方向
-        max_score = np.max(s)
-        if max_score > 1:
-            adjusted_score = -s  # 分数越高风险越低，取反
-        else:
-            adjusted_score = s
+    records = []
+    max_workers = min(8, len(score_cols))
+    if max_workers <= 1:
+        for col in score_cols:
+            rec = _compute_single_model_performance(df, target_col, col, n_total)
+            if rec:
+                records.append(rec)
+    else:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(_compute_single_model_performance, df, target_col, col, n_total): col
+                for col in score_cols
+            }
+            for future in as_completed(futures):
+                try:
+                    rec = future.result()
+                    if rec:
+                        records.append(rec)
+                except Exception:
+                    continue
 
-        # 计算 AUC
-        try:
-            auc = roc_auc_score(y, adjusted_score)
-        except Exception:
-            auc = 0.5
-
-        # 计算 KS
-        try:
-            fpr, tpr, _ = roc_curve(y, adjusted_score)
-            ks = float(max(tpr - fpr))
-        except Exception:
-            ks = 0.0
-
-        # 逾期率
-        bad_unique = np.unique(y)
-        bad_rate = float(np.mean(y == 1)) if 1 in bad_unique else (
-            float(np.mean(y == -1)) if -1 in bad_unique else float(y.mean()))
-
-        records.append({
-            'model': col,
-            'coverage': round(len(tmp) / n_total, 4),
-            'auc': round(auc, 4),
-            'ks': round(ks, 4),
-            'bad_rate': round(bad_rate, 4),
-            'n': len(tmp),
-        })
-
+    if not records:
+        return pd.DataFrame()
     return pd.DataFrame(records).sort_values('ks', ascending=False).reset_index(drop=True)
 
 
@@ -138,19 +166,22 @@ def compute_complementarity(df: pd.DataFrame, target_col: str, score_cols: list)
     """
     records = []
     df_clean = df.dropna(subset=score_cols + [target_col])
-    y = df_clean[target_col].values
+    if df_clean.empty or len(score_cols) < 2:
+        return pd.DataFrame(records)
+
+    # 预计算每个模型的拒绝掩码，避免重复 percentile 计算
+    reject_masks = {}
+    for col in score_cols:
+        s = df_clean[col].values
+        q20 = np.percentile(s, 20)
+        reject_masks[col] = s < q20
 
     for i, col_a in enumerate(score_cols):
-        s_a = df_clean[col_a].values
-        q20_a = np.percentile(s_a, 20)
-        reject_a = s_a < q20_a
-
+        reject_a = reject_masks[col_a]
         for j, col_b in enumerate(score_cols):
             if i >= j:
                 continue
-            s_b = df_clean[col_b].values
-            q20_b = np.percentile(s_b, 20)
-            reject_b = s_b < q20_b
+            reject_b = reject_masks[col_b]
 
             # A拒B不拒
             a_not_b = reject_a & (~reject_b)
@@ -665,6 +696,78 @@ def run_correlation_analysis(df: pd.DataFrame,
             lambda x: f'{x:.1%}' if pd.notna(x) else '-')
     strategy_table_html = strategy_table.to_html(index=False, border=0, classes='data-table') if len(strategy_table) > 0 else ''
 
+    # 补充：多模型分箱 + 决策树（用于模型分析报告增强）
+    model_binning_details = []
+    if usable_cols:
+        max_workers = min(8, len(usable_cols))
+        if max_workers <= 1:
+            iter_results = []
+            for model_col in usable_cols:
+                try:
+                    iter_results.append((model_col, equal_freq_binning(
+                        df=df_clean,
+                        score_col=model_col,
+                        label_col=target_col,
+                        n_bins=10,
+                        threshold=1.0
+                    )))
+                except Exception:
+                    continue
+        else:
+            iter_results = []
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(
+                        equal_freq_binning,
+                        df_clean, model_col, target_col, 10, 1.0
+                    ): model_col
+                    for model_col in usable_cols
+                }
+                for future in as_completed(futures):
+                    model_col = futures[future]
+                    try:
+                        iter_results.append((model_col, future.result()))
+                    except Exception:
+                        continue
+
+        # 按原列顺序输出，保持报告稳定
+        temp_map = {}
+        for model_col, result_tuple in iter_results:
+            try:
+                binning_df, _, _, sort_desc = result_tuple
+                rows = []
+                for _, row in binning_df.iterrows():
+                    row_dict = row.to_dict()
+                    row_values = list(row_dict.values())
+                    rows.append({
+                        'bin': row_values[0] if len(row_values) > 0 else '',
+                        'score_min': row_values[1] if len(row_values) > 1 else '',
+                        'score_max': row_values[2] if len(row_values) > 2 else '',
+                        'sample_count': row_values[3] if len(row_values) > 3 else 0,
+                        'bad_count': row_values[4] if len(row_values) > 4 else 0,
+                        'cum_bad_rate': row_values[7] if len(row_values) > 7 else '0%',
+                        'bad_rate': row_values[8] if len(row_values) > 8 else '0%',
+                        'lift': row_values[9] if len(row_values) > 9 else 0,
+                        'cum_ks': row_values[10] if len(row_values) > 10 else 0,
+                    })
+                temp_map[model_col] = {
+                    'model': model_col,
+                    'sort_desc': sort_desc,
+                    'rows': rows,
+                }
+            except Exception:
+                continue
+
+        for model_col in usable_cols:
+            if model_col in temp_map:
+                model_binning_details.append(temp_map[model_col])
+
+    model_decision_tree = build_model_decision_tree(
+        df=df_clean,
+        label_col=target_col,
+        score_cols=usable_cols
+    )
+
     return {
         'data_summary': {
             'total_samples': n_total,
@@ -682,6 +785,8 @@ def run_correlation_analysis(df: pd.DataFrame,
         'score_cols': usable_cols,
         'cluster_order': cluster_order,
         'cluster_groups': cluster_groups,
+        'model_binning_details': model_binning_details,
+        'model_decision_tree': model_decision_tree,
     }
 
 
@@ -695,6 +800,8 @@ def generate_correlation_html_report(analysis_result: dict,
     strategy_metrics = analysis_result.get('strategy_metrics', {})
     cluster_groups = analysis_result.get('cluster_groups', {})
     performance = analysis_result.get('performance', [])
+    model_binning_details = analysis_result.get('model_binning_details', [])
+    model_decision_tree = analysis_result.get('model_decision_tree', {})
 
     # 聚类颜色
     cluster_colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16']
@@ -769,6 +876,74 @@ def generate_correlation_html_report(analysis_result: dict,
     {right}
   </div>'''
 
+    def _to_pct(value):
+        try:
+            if isinstance(value, str):
+                return float(value.replace('%', '').strip())
+            return float(value)
+        except Exception:
+            return 0.0
+
+    def build_model_binning_section():
+        if not model_binning_details:
+            return ''
+        sections = []
+        for item in model_binning_details:
+            rows = item.get('rows', [])
+            if not rows:
+                continue
+            max_bad = max([_to_pct(r.get('bad_rate', '0%')) for r in rows] or [1.0])
+            table_rows = []
+            for r in rows:
+                bad_rate_text = str(r.get('bad_rate', '0%'))
+                bad_rate_num = _to_pct(bad_rate_text)
+                bar_width = 0 if max_bad <= 0 else min(100, bad_rate_num / max_bad * 100)
+                table_rows.append(f"""
+                <tr>
+                    <td>{r.get('bin', '--')}</td>
+                    <td>{r.get('score_min', '--')}</td>
+                    <td>{r.get('score_max', '--')}</td>
+                    <td>{int(float(r.get('sample_count', 0) or 0)):,}</td>
+                    <td>{int(float(r.get('bad_count', 0) or 0)):,}</td>
+                    <td><span class="rate-bar-track"><span class="rate-bar-fill" style="width:{bar_width:.1f}%"></span></span>{bad_rate_text}</td>
+                    <td>{r.get('cum_bad_rate', '0%')}</td>
+                    <td>{r.get('lift', 0)}</td>
+                    <td>{r.get('cum_ks', 0)}</td>
+                </tr>
+                """)
+            sections.append(f"""
+            <div class="section">
+              <h2>📌 {item.get('model', 'model')} Binning Detail</h2>
+              <p>Sort rule: <b>{item.get('sort_desc', '')}</b></p>
+              <table class="data-table">
+                <thead><tr><th>Bin</th><th>Score Min</th><th>Score Max</th><th>Samples</th><th>Bad Samples</th><th>Bad Rate</th><th>Cum Bad Rate</th><th>Lift</th><th>Cum KS</th></tr></thead>
+                <tbody>{''.join(table_rows)}</tbody>
+              </table>
+            </div>
+            """)
+        return ''.join(sections)
+
+    def build_model_tree_section():
+        image = model_decision_tree.get('image', '')
+        leaf_nodes = model_decision_tree.get('leaf_nodes', []) or []
+        if not image and not leaf_nodes:
+            return ''
+        rows = ''.join(
+            f"<tr><td>{n.get('leaf_id', '--')}</td><td>{n.get('sample_count', 0):,}</td><td>{n.get('bad_count', 0):,}</td><td>{n.get('bad_rate', 0) * 100:.2f}%</td></tr>"
+            for n in leaf_nodes
+        )
+        tree_image_html = f'<img src="data:image/png;base64,{image}" alt="model decision tree">' if image else '<div>No decision tree image.</div>'
+        return f"""
+        <div class="section">
+          <h2>🌲 Model Decision Tree</h2>
+          <div class="tree-image-box">{tree_image_html}</div>
+          <table class="data-table">
+            <thead><tr><th>Leaf</th><th>Samples</th><th>Bad Samples</th><th>Bad Rate</th></tr></thead>
+            <tbody>{rows or '<tr><td colspan="4">No leaf-node details.</td></tr>'}</tbody>
+          </table>
+        </div>
+        """
+
     html = f'''<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -800,6 +975,10 @@ def generate_correlation_html_report(analysis_result: dict,
   .data-table th{{background:#1e3a5f;color:white;padding:10px 12px;text-align:left}}
   .data-table td{{padding:8px 12px;border-bottom:1px solid #e2e8f0}}
   .data-table tr:nth-child(even){{background:#f8fafc}}
+  .rate-bar-track{{width:120px;height:10px;border-radius:999px;background:#e5e7eb;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:8px}}
+  .rate-bar-fill{{height:100%;background:linear-gradient(90deg,#f59e0b,#dc2626);display:block}}
+  .tree-image-box{{border:1px solid #e2e8f0;background:#f8fafc;border-radius:10px;padding:10px;margin:10px 0}}
+  .tree-image-box img{{width:100%;display:block}}
   .method-box{{background:#eff6ff;border-left:4px solid #2563eb;border-radius:8px;padding:14px 16px;margin:12px 0}}
   .method-box h4{{color:#1e40af;font-size:14px;margin-bottom:6px}}
   .method-box p{{font-size:13px;color:#374151}}
@@ -821,6 +1000,10 @@ def generate_correlation_html_report(analysis_result: dict,
 <div class="container">
 
 {build_kpi_html()}
+
+{build_model_tree_section()}
+
+{build_model_binning_section()}
 
 <!-- 分析框架 -->
 <div class="section">
@@ -898,7 +1081,6 @@ def generate_correlation_html_report(analysis_result: dict,
     <li>🔑 <b>定期监控 PSI</b>：多模型策略上线后，需同时监控各模型分数的 PSI</li>
   </ul>
 </div>
-
 </div>
 <footer>多模型相关性与策略组合分析报告 · 生成于 {analysis_date} · RiskPilot</footer>
 </body>

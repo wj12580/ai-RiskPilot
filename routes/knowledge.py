@@ -1,149 +1,188 @@
 """
-风控知识库问答 API 路由
-POST /api/knowledge/ask   提问（调用大模型回答风控知识）
-GET  /api/knowledge/topics 获取知识分类主题
+风控知识库问答 API
+POST /api/knowledge/ask
+GET  /api/knowledge/topics
+GET  /api/knowledge/status
+POST /api/knowledge/init
 """
 
-import json
 from flask import Blueprint, request, jsonify
-from services.agent_router import router, RISK_SYSTEM_PROMPT
 
-knowledge_bp = Blueprint('knowledge', __name__)
+from models.knowledge_document import KnowledgeDocument
+from services.agent_router import check_router_status
+from services.knowledge_ingest_service import ensure_knowledge_base_seeded
+from services.knowledge_retrieval_service import retrieve_knowledge
+from services.knowledge_answer_service import (
+    answer_with_knowledge,
+    build_retrieval_fallback_answer,
+)
 
-# ── 风控知识库系统提示词 ──────────────────────────────────────────────────────
-KNOWLEDGE_SYSTEM_PROMPT = """你是一位经验丰富的风控策略分析师，专注于信贷风控领域。
-你的职责是回答用户关于风控指标、策略分析方法、模型评估等方面的专业问题。
+knowledge_bp = Blueprint("knowledge", __name__)
 
-你精通以下领域：
-1. **模型评估指标**：KS值、AUC/ROC、IV（信息价值）、PSI（群体稳定性指数）、Gini系数等的计算方法、含义与业务解读
-2. **分箱与特征工程**：等频分箱、等距分箱、卡方分箱、IV分箱的原理与应用
-3. **逾期率分析**：M1/M2/M3逾期率定义、Vintage分析、Lift曲线解读
-4. **策略设计**：准入策略、额度策略、定价策略、催收策略的设计思路
-5. **模型开发**：逻辑回归、GBM、SHAP解释、样本设计、时间窗设置
-6. **PSI稳定性**：PSI计算、CSI特征稳定性、模型漂移检测与处理
-7. **信贷业务知识**：首贷/复贷策略、申请评分卡、行为评分卡、催收评分卡
-
-回答要求：
-- 专业准确，结合实际业务场景
-- 包含计算公式（用数学表达式或示例说明）
-- 给出可操作的实践建议
-- 中文回答，简洁易懂
-- 如涉及策略历史效果，给出通用的行业参考范围
-"""
-
-# ── 知识主题分类 ──────────────────────────────────────────────────────────────
 KNOWLEDGE_TOPICS = [
     {
         "category": "模型评估",
         "icon": "📊",
         "questions": [
-            "KS值怎么计算？多少算好？",
-            "AUC和KS有什么区别？",
-            "IV值怎么计算？特征IV多少值得保留？",
-            "PSI是什么？怎么判断模型稳定性？",
-        ]
+            "KS 值怎么计算？多少算好？",
+            "AUC 和 KS 的区别是什么？",
+            "PSI 怎么判断模型稳定性？",
+            "IV 一般如何分级？",
+            "Gini、AUC、KS 在风控里怎么一起看？",
+            "模型上线后多久做一次效果复盘？",
+        ],
     },
     {
         "category": "分箱分析",
         "icon": "📦",
         "questions": [
-            "逾期率/Lift分析怎么做？",
-            "等频分箱和等距分箱的区别？",
-            "WOE编码的原理和应用",
-            "分箱数量如何选择？",
-        ]
+            "逾期率 / Lift 分析怎么做？",
+            "等频分箱和等距分箱有什么区别？",
+            "WOE 编码的原理是什么？",
+            "分箱数量通常怎么选？",
+            "坏账率单调性不满足时怎么处理？",
+            "累计逾期率在分箱里怎么解释？",
+        ],
     },
     {
-        "category": "策略设计",
-        "icon": "🎯",
+        "category": "规则策略",
+        "icon": "🧩",
         "questions": [
-            "首贷准入策略如何设计？",
-            "复贷策略和首贷策略有什么区别？",
-            "多评分模型串行策略是什么？",
-            "策略分层效果如何评估？",
-        ]
+            "首贷策略应该怎么设计？",
+            "复贷策略和首贷策略有哪些关键差异？",
+            "规则拦截率和命中逾期率如何平衡？",
+            "规则与模型分怎么做联合决策？",
+            "如何识别并去除规则冗余？",
+            "规则阈值调整后要重点看哪些指标？",
+        ],
     },
     {
-        "category": "业务指标",
+        "category": "组合策略",
+        "icon": "🔗",
+        "questions": [
+            "串行捞回策略如何评估收益与风险？",
+            "双模型组合什么时候优于单模型？",
+            "主模型+补充模型的阈值如何联调？",
+            "相关性高的模型还能组合吗？",
+            "如何构建拒绝流量的再筛选策略？",
+            "多策略并行时如何做冲突仲裁？",
+        ],
+    },
+    {
+        "category": "稳定性监控",
         "icon": "📈",
         "questions": [
-            "M1/M2/M3逾期率定义是什么？",
-            "Vintage分析是什么？怎么做？",
-            "坏账率和逾期率有什么区别？",
-            "Lift值怎么理解？",
-        ]
+            "模型漂移常见信号有哪些？",
+            "线上监控看板应包含哪些核心指标？",
+            "PSI 超过阈值后应该怎么排查？",
+            "样本口径变化会怎样影响监控结论？",
+            "节假日或活动期如何做特殊监控？",
+            "什么时候应该触发策略回滚？",
+        ],
     },
     {
-        "category": "模型开发",
-        "icon": "🤖",
+        "category": "业务口径",
+        "icon": "📝",
         "questions": [
-            "申请评分卡和行为评分卡的区别？",
-            "SHAP值如何解释特征重要性？",
-            "训练集和验证集如何划分？",
-            "样本不均衡怎么处理？",
-        ]
+            "首逾、30+、M1+ 的口径差异是什么？",
+            "通过率、授信率、放款率怎么区分？",
+            "坏账率按申请维度还是放款维度统计？",
+            "样本观察窗怎么设更合理？",
+            "拒绝推断在风控复盘中如何使用？",
+            "跨渠道对比时如何统一口径？",
+        ],
     },
 ]
 
 
-# ── 获取知识主题 ──────────────────────────────────────────────────────────────
-@knowledge_bp.route('/topics', methods=['GET'])
+@knowledge_bp.route("/topics", methods=["GET"])
 def get_topics():
-    """获取知识库主题分类和常见问题"""
-    return jsonify({'topics': KNOWLEDGE_TOPICS})
+    return jsonify({"topics": KNOWLEDGE_TOPICS})
 
 
-# ── 提问接口 ──────────────────────────────────────────────────────────────────
-@knowledge_bp.route('/ask', methods=['POST'])
+@knowledge_bp.route("/status", methods=["GET"])
+def get_status():
+    return jsonify(
+        {
+            "knowledge_documents": KnowledgeDocument.query.count(),
+            "router": check_router_status(),
+        }
+    )
+
+
+@knowledge_bp.route("/init", methods=["POST"])
+def initialize_knowledge():
+    result = ensure_knowledge_base_seeded()
+    return jsonify(result)
+
+
+@knowledge_bp.route("/ask", methods=["POST"])
 def ask():
-    """
-    调用大模型回答风控知识问题
-    Body: { "question": "...", "context": "..." (可选附加上下文) }
-    """
-    data = request.get_json()
-    if not data:
-        return jsonify({'error': '请求体不能为空'}), 400
-
-    question = (data.get('question') or '').strip()
-    context = (data.get('context') or '').strip()
+    data = request.get_json() or {}
+    question = (data.get("question") or "").strip()
+    context = (data.get("context") or "").strip()
 
     if not question:
-        return jsonify({'error': '问题不能为空'}), 400
-
+        return jsonify({"error": "问题不能为空"}), 400
     if len(question) > 2000:
-        return jsonify({'error': '问题长度不能超过2000字'}), 400
+        return jsonify({"error": "问题长度不能超过2000字"}), 400
 
-    # 构建用户消息
-    user_msg = question
-    if context:
-        user_msg = f"【背景信息】\n{context}\n\n【问题】\n{question}"
+    if KnowledgeDocument.query.count() == 0:
+        try:
+            ensure_knowledge_base_seeded()
+        except Exception:
+            pass
 
+    retrieval_result = retrieve_knowledge(question)
+    if not retrieval_result.get("hit", False):
+        try:
+            ensure_knowledge_base_seeded()
+            retrieval_result = retrieve_knowledge(question)
+        except Exception:
+            pass
+
+    # 路由层超时保护：避免偶发长等待，超时返回基于检索片段的可执行建议
     try:
-        result = router.call(
-            prompt=user_msg,
-            system=KNOWLEDGE_SYSTEM_PROMPT,
-            temperature=0.6,
-            max_tokens=2000,
-        )
-        if result.get('success'):
-            return jsonify({
-                'question': question,
-                'answer': result['content'],
-                'model': result.get('model', ''),
-                'success': True,
-            })
-        else:
-            return jsonify({
-                'question': question,
-                'answer': f'暂时无法获取AI回答，请检查大模型配置。错误：{result.get("error", "未知错误")}',
-                'model': '',
-                'success': False,
-            })
-    except Exception as e:
-        # 若大模型调用失败，返回结构化错误
-        return jsonify({
-            'question': question,
-            'answer': f'暂时无法获取AI回答，请检查大模型配置。错误信息：{str(e)}',
-            'model': '',
-            'success': False,
-        }), 200  # 仍返回200，让前端区分处理
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(answer_with_knowledge, question, retrieval_result, context)
+            try:
+                answer_result = future.result(timeout=25)
+            except FuturesTimeoutError:
+                future.cancel()
+                answer_result = {
+                    "success": True,
+                    "answer": build_retrieval_fallback_answer(question, retrieval_result.get("matches", [])),
+                    "model": "",
+                    "sources": retrieval_result.get("matches", [])[:3],
+                    "used_retrieval": bool(retrieval_result.get("hit", False)),
+                }
+    except Exception:
+        answer_result = answer_with_knowledge(question, retrieval_result, context)
+
+    if not (answer_result.get("answer") or "").strip():
+        answer_result = {
+            "success": True,
+            "answer": build_retrieval_fallback_answer(question, retrieval_result.get("matches", [])),
+            "model": answer_result.get("model", ""),
+            "sources": answer_result.get("sources", []),
+            "used_retrieval": bool(retrieval_result.get("hit", False)),
+        }
+
+    return jsonify(
+        {
+            "question": question,
+            "answer": answer_result.get("answer", ""),
+            "model": answer_result.get("model", ""),
+            "success": answer_result.get("success", False),
+            "sources": answer_result.get("sources", []),
+            "used_retrieval": answer_result.get("used_retrieval", False),
+            "retrieval": {
+                "hit": retrieval_result.get("hit", False),
+                "knowledge_type": retrieval_result.get("query", {}).get("knowledge_type", ""),
+                "topic": retrieval_result.get("query", {}).get("topic", ""),
+                "match_count": len(retrieval_result.get("matches", [])),
+            },
+        }
+    )

@@ -199,6 +199,7 @@ def skill_model_correlation(
         target_col:  目标列
         score_cols:  分数列列表（None = 自动识别所有数值列）
         file_type:   文件类型
+    【优化】相关性矩阵改用 pandas DataFrame.corr(method='spearman') 一次性计算
     """
     try:
         df = _load_df(file_path, file_type)
@@ -213,7 +214,7 @@ def skill_model_correlation(
                 and df[c].std() > 0
                 and df[c].nunique() > 5
             ]
-            score_cols = score_cols[:20]  # 最多 20 列
+            score_cols = score_cols[:20]
 
         if not score_cols:
             return {"message": "未找到可用的分数列", "data": None}
@@ -221,9 +222,9 @@ def skill_model_correlation(
         y = pd.to_numeric(df[target_col], errors="coerce").dropna()
         df_clean = df.loc[y.index]
 
+        # 逐列计算 KS / AUC（保持原逻辑）
         results = []
-        cor_matrix = {}
-
+        valid_cols = []
         for col in score_cols:
             if col not in df_clean.columns:
                 continue
@@ -231,38 +232,38 @@ def skill_model_correlation(
             common_idx = y.index.intersection(scores.index)
             if len(common_idx) < 50:
                 continue
+            valid_cols.append(col)
             y_sub = y.loc[common_idx]
             s_sub = scores.loc[common_idx]
-
-            # KS & AUC
             try:
                 auc = roc_auc_score(y_sub, s_sub)
                 fpr, tpr, _ = roc_curve(y_sub, s_sub)
                 ks = float(np.max(tpr - fpr))
             except Exception:
                 auc, ks = 0.5, 0.0
-
-            # 与其他分数的相关性（Spearman）
-            cor_matrix[col] = {}
-            for other in score_cols:
-                if other != col and other in df_clean.columns:
-                    other_s = pd.to_numeric(df_clean[other], errors="coerce").dropna()
-                    common2 = y.index.intersection(other_s.index)
-                    if len(common2) >= 50:
-                        cor = s_sub.loc[common2].corr(other_s.loc[common2], method="spearman")
-                        cor_matrix[col][other] = round(float(cor), 4)
-
             results.append({
-                "model":       col,
-                "auc":         round(auc, 4),
-                "ks":          round(ks, 4),
-                "coverage":    round(len(common_idx) / len(y), 4),
-                "mean_score":  round(float(s_sub.mean()), 4),
-                "std_score":   round(float(s_sub.std()), 4),
+                "model":      col,
+                "auc":        round(auc, 4),
+                "ks":         round(ks, 4),
+                "coverage":   round(len(common_idx) / len(y), 4),
+                "mean_score": round(float(s_sub.mean()), 4),
+                "std_score":  round(float(s_sub.std()), 4),
             })
 
-        # 按 KS 降序
         results.sort(key=lambda x: x["ks"], reverse=True)
+
+        # 向量化 Spearman 相关性矩阵
+        cor_matrix = {}
+        if len(valid_cols) >= 2:
+            score_df = df_clean[valid_cols].apply(pd.to_numeric, errors="coerce")
+            spearman_mat = score_df.corr(method="spearman")
+            for col in valid_cols:
+                cor_matrix[col] = {}
+                for other in valid_cols:
+                    if other != col:
+                        val = spearman_mat.loc[col, other]
+                        if not pd.isna(val):
+                            cor_matrix[col][other] = round(float(val), 4)
 
         return {
             "message":    f"分析了 {len(results)} 个模型",
@@ -412,6 +413,7 @@ def skill_feature_importance(
 ) -> Dict[str, Any]:
     """
     特征重要性分析：计算所有数值特征与 target 的 Spearman 相关系数
+    【优化】用 pandas DataFrame.corrwith(method='spearman') 向量化替换串行 for 循环
     """
     try:
         df = _load_df(file_path, file_type)
@@ -419,25 +421,46 @@ def skill_feature_importance(
         df = df.loc[y.index]
 
         exclude = {target_col, "label", "overdue", "y", "flag", "id", "customer_id"}
+        numeric_cols = [
+            col for col in df.columns
+            if col.lower() not in exclude
+            and pd.api.types.is_numeric_dtype(df[col])
+        ]
+
+        if not numeric_cols:
+            return {"message": "无可用数值特征", "top_features": [], "all_features": []}
+
+        # 过滤出有效列（与 target 的公共非空样本 >= 50）
+        valid_cols = []
+        for col in numeric_cols:
+            x = pd.to_numeric(df[col], errors="coerce")
+            common = y.index.intersection(x.dropna().index)
+            if len(common) >= 50:
+                valid_cols.append(col)
+
+        if not valid_cols:
+            return {"message": "有效特征数为0（公共非空样本<50）", "top_features": [], "all_features": []}
+
+        # 向量化 Spearman：pandas corrwith 对所有列一次性计算
+        df_valid = df[valid_cols].apply(pd.to_numeric, errors="coerce")
+        df_aligned = df_valid.loc[y.index]
+        spearman_series = df_aligned.corrwith(y.reindex(df_aligned.index), method="spearman")
 
         results = []
-        for col in df.columns:
-            if col.lower() in exclude:
+        for col, corr in spearman_series.items():
+            if pd.isna(corr):
                 continue
-            if not pd.api.types.is_numeric_dtype(df[col]):
-                continue
-            x = pd.to_numeric(df[col], errors="coerce").dropna()
-            common = y.index.intersection(x.index)
-            if len(common) < 50:
-                continue
-            corr = float(x.loc[common].corr(y.loc[common], method="spearman"))
-            results.append({"feature": col, "spearman_corr": round(corr, 4), "abs_corr": round(abs(corr), 4)})
+            results.append({
+                "feature": col,
+                "spearman_corr": round(float(corr), 4),
+                "abs_corr": round(abs(float(corr)), 4),
+            })
 
         results.sort(key=lambda x: x["abs_corr"], reverse=True)
         top_features = results[:top_n]
 
         return {
-            "message":    f"分析了 {len(results)} 个特征",
+            "message":      f"分析了 {len(results)} 个特征",
             "top_features": top_features,
             "all_features": results,
         }

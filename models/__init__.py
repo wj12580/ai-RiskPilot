@@ -1,3 +1,5 @@
 from models.analysis_task import AnalysisTask
 from models.strategy_record import StrategyRecord
 from models.strategy_review import StrategyReview
+from models.knowledge_document import KnowledgeDocument
+from models.knowledge_chunk import KnowledgeChunk

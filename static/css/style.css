@@ -11,6 +11,49 @@
   background: #f0f4f8;
 }
 
+.report-history-wrap {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--gray-200);
+  background: #f8fafc;
+}
+.report-history-title {
+  font-size: 12px;
+  color: var(--gray-500);
+  margin-bottom: 6px;
+}
+.report-history-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.report-history-toggle {
+  border: 1px dashed var(--gray-300);
+  background: #fff;
+  color: var(--gray-700);
+  border-radius: 6px;
+  font-size: 12px;
+  padding: 4px 10px;
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+.report-history-toggle:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+.report-history-item {
+  border: 1px solid var(--gray-300);
+  background: white;
+  color: var(--gray-700);
+  border-radius: 999px;
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.report-history-item:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
 /* RiskPilot - 风控策略分析师AI助手 */
 
 :root {
@@ -157,6 +200,8 @@ body {
 .main-content {
   flex: 1;
   margin-left: 240px;
+  width: calc(100vw - 240px);
+  max-width: calc(100vw - 240px);
   padding: 30px;
 }
 
@@ -812,6 +857,8 @@ body {
   
   .main-content {
     margin-left: 0;
+    width: 100%;
+    max-width: 100%;
   }
   
   .metrics-grid {
@@ -984,45 +1031,97 @@ body {
 }
 
 /* ─── 知识库问答页面 ─────────────────────────────────────────────── */
+#page-knowledge .page-header {
+  margin-bottom: 12px;
+}
+
+#page-knowledge .page-title {
+  font-size: 1.3rem;
+  margin-bottom: 4px;
+}
+
+#page-knowledge .page-desc {
+  font-size: 0.88rem;
+  color: var(--gray-500);
+}
+
+#page-knowledge {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
+.knowledge-layout {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(260px, 280px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.knowledge-layout > div {
+  min-width: 0;
+}
+
+.knowledge-topic-card,
+.knowledge-chat-card {
+  margin-bottom: 0;
+}
+
+.knowledge-topic-body {
+  padding: 12px;
+}
+
+.knowledge-chat-header {
+  padding: 12px 14px;
+}
+
+.knowledge-input-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+  gap: 8px;
+}
+
 .chat-history {
-  padding: 20px 24px;
-  min-height: 360px;
-  max-height: 520px;
+  padding: 12px 14px;
+  min-height: 320px;
+  max-height: 460px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 10px;
   border-top: 1px solid var(--gray-100);
   border-bottom: 1px solid var(--gray-100);
 }
 
 .chat-welcome {
   text-align: center;
-  padding: 40px 20px;
+  padding: 22px 12px;
   color: var(--gray-500);
 }
 
 .chat-welcome-icon {
-  font-size: 3rem;
-  margin-bottom: 12px;
-}
-
-.chat-welcome-title {
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: var(--gray-700);
+  font-size: 2rem;
   margin-bottom: 8px;
 }
 
+.chat-welcome-title {
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--gray-700);
+  margin-bottom: 6px;
+}
+
 .chat-welcome-desc {
-  font-size: 0.9rem;
-  line-height: 1.8;
+  font-size: 0.84rem;
+  line-height: 1.6;
   color: var(--gray-500);
 }
 
 .chat-message {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   animation: fadeInUp 0.3s ease;
 }
 
@@ -1036,13 +1135,13 @@ body {
 }
 
 .chat-avatar {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
   flex-shrink: 0;
 }
 
@@ -1058,10 +1157,10 @@ body {
 
 .chat-bubble {
   max-width: 80%;
-  padding: 12px 16px;
-  border-radius: 12px;
-  font-size: 0.9rem;
-  line-height: 1.7;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: 0.86rem;
+  line-height: 1.58;
 }
 
 .chat-message.user .chat-bubble {
@@ -1091,19 +1190,19 @@ body {
 }
 
 .chat-input-area {
-  padding: 16px 24px;
+  padding: 10px 12px;
 }
 
 .chat-textarea {
   width: 100%;
-  padding: 12px 16px;
+  padding: 10px 12px;
   border: 1px solid var(--gray-300);
   border-radius: var(--radius);
-  font-size: 0.95rem;
+  font-size: 0.88rem;
   resize: none;
   transition: border-color 0.2s;
   font-family: inherit;
-  line-height: 1.5;
+  line-height: 1.45;
 }
 
 .chat-textarea:focus {
@@ -1114,7 +1213,7 @@ body {
 
 /* 知识主题侧边栏 */
 .topic-group {
-  margin-bottom: 16px;
+  margin-bottom: 10px;
 }
 
 .topic-group-header {
@@ -1124,8 +1223,8 @@ body {
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--gray-700);
-  margin-bottom: 8px;
-  padding: 4px 0;
+  margin-bottom: 5px;
+  padding: 2px 0;
   border-bottom: 1px solid var(--gray-100);
 }
 
@@ -1133,15 +1232,25 @@ body {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 7px 10px;
+  padding: 6px 8px;
   border-radius: 6px;
   border: none;
   background: none;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--gray-600);
   transition: all 0.15s;
   line-height: 1.4;
+}
+
+@media (max-width: 1100px) {
+  .knowledge-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-history {
+    max-height: 420px;
+  }
 }
 
 .topic-question-btn:hover {

@@ -11,7 +11,118 @@ import json
 from typing import List, Dict, Any, Optional
 
 # ── LLM 调用（复用项目已有的路由）────────────────────────────────────────────
-from services.agent_router import call_glm_with_ds
+from services.agent_router import router
+
+
+def _call_glm_then_gpt(prompt: str, system: str, temperature: float, max_tokens: int, json_mode: bool) -> Dict[str, Any]:
+    """GLM 优先，失败后回退 GPT（不使用 DS，避免策略口径漂移）。"""
+    glm_result = router.call(
+        prompt,
+        system=system,
+        model='glm',
+        json_mode=json_mode,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    if glm_result.get('success') and (glm_result.get('content') or '').strip():
+        return glm_result
+
+    gpt_result = router.call(
+        prompt,
+        system=system,
+        model='gpt',
+        json_mode=json_mode,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    if gpt_result.get('success') and (gpt_result.get('content') or '').strip():
+        return gpt_result
+
+    return glm_result if glm_result.get('error') else gpt_result
+
+
+def _resolve_source_by_model(model_name: str) -> str:
+    model_text = (model_name or '').lower()
+    if model_text.startswith('glm/'):
+        return 'glm'
+    if model_text.startswith('gpt/'):
+        return 'gpt'
+    if model_text.startswith('ds/'):
+        return 'ds'
+    return 'llm'
+
+
+def _build_rule_data_driven_suggestions(analysis_data: Dict[str, Any]) -> List[Dict[str, str]]:
+    """当规则分析 LLM 建议不足时，用统计结果补充可执行建议。"""
+    suggestions: List[Dict[str, str]] = []
+    user_profile = analysis_data.get('user_profile', {}) or {}
+    overall_bad = float(user_profile.get('overall_bad_rate', 0) or 0)
+
+    bad_rules = list(user_profile.get('bad_rules', []) or [])
+    good_rules = list(user_profile.get('good_rules', []) or [])
+    bad_combos = list(user_profile.get('bad_combinations', []) or [])
+
+    if bad_rules:
+        top = sorted(bad_rules, key=lambda x: float(x.get('lift', 0) or 0), reverse=True)[:3]
+        detail = "；".join(
+            f"{r.get('rule')}={r.get('value')}（样本{int(r.get('sample_count', 0))}，逾期率{float(r.get('bad_rate', 0))*100:.2f}%）"
+            for r in top
+        )
+        suggestions.append({
+            'title': '🚨 高风险规则优先收紧',
+            'content': (
+                f"建议优先收紧以下高风险规则阈值：{detail}。"
+                f"可采用“强拦截+人工复核”分层策略，目标是将命中客群逾期率压回接近整体水平（当前整体约 {overall_bad*100:.2f}%）。"
+            ),
+            'level': 'danger',
+        })
+
+    if good_rules:
+        top = sorted(good_rules, key=lambda x: float(x.get('lift', 0) or 9999))[:3]
+        detail = "；".join(
+            f"{r.get('rule')}={r.get('value')}（样本{int(r.get('sample_count', 0))}，逾期率{float(r.get('bad_rate', 0))*100:.2f}%）"
+            for r in top
+        )
+        suggestions.append({
+            'title': '✅ 低风险规则可做白名单',
+            'content': (
+                f"建议将低风险特征纳入白名单或降权通道：{detail}。"
+                "对该类客群可减少重复规则校验，缩短审批链路并提升通过效率。"
+            ),
+            'level': 'success',
+        })
+
+    if bad_combos:
+        top = sorted(bad_combos, key=lambda x: float(x.get('lift', 0) or 0), reverse=True)[:2]
+        detail = "；".join(
+            f"{c.get('combo')}（样本{int(c.get('sample_count', 0))}，逾期率{float(c.get('bad_rate', 0))*100:.2f}%，Lift={float(c.get('lift', 0)):.2f}）"
+            for c in top
+        )
+        suggestions.append({
+            'title': '🔗 规则组合命中需单列策略',
+            'content': (
+                f"检测到高风险组合：{detail}。"
+                "建议单独配置组合拦截策略，避免仅靠单规则判断导致漏拦截。"
+            ),
+            'level': 'warning',
+        })
+
+    return suggestions
+
+
+def generate_rule_quick_suggestions(analysis_data: Dict[str, Any]) -> List[Dict[str, str]]:
+    """
+    规则分析快速建议（无需调用 LLM）。
+    用于 LLM 超时/失败时保障前端有可展示的建议。
+    """
+    suggestions = _build_rule_data_driven_suggestions(analysis_data or {})
+    if not suggestions:
+        return [{
+            'title': '⚠️ 建议补充规则样本',
+            'content': '当前规则画像有效样本偏少，建议先检查规则字段取值分布与标签质量，再重试分析。',
+            'level': 'warning',
+        }]
+    return suggestions
 
 # 阈值定义
 THRESHOLDS = {
@@ -105,6 +216,8 @@ def generate_llm_dynamic_suggestion(
             'suggestions': [],
             'llm_raw': '',
             'llm_parsed': False,
+            'model': '',
+            'error': 'no_data_prompt',
         }
 
     user_message = f"""请根据以下实际分析数据，给出针对性的风控策略建议：
@@ -121,48 +234,79 @@ def generate_llm_dynamic_suggestion(
 请严格基于以上数据中的具体数值和发现给出建议，不要给出与数据无关的通用建议。直接返回 JSON 数组，不要加 ```json 代码块。"""
 
     try:
-        result = call_glm_with_ds(
+        suggestion_max_tokens = 900 if biz_module == 'rule' else 1100
+        result = _call_glm_then_gpt(
             prompt=user_message,
             system=_STRATEGY_SYSTEM_PROMPT,
-            json_mode=True,
+            # 使用文本模式提高兼容性，再在本地解析 JSON/文本建议
+            json_mode=False,
             temperature=0.7,
+            max_tokens=suggestion_max_tokens,
         )
 
         if not result.get('success'):
-            print(f"[LLM建议] 调用失败: {result.get('error', '未知错误')}")
+            router_error = str(result.get('error') or 'llm_call_failed')
+            provider_detail = str(result.get('content') or '').strip()
+            if provider_detail:
+                provider_detail = provider_detail.replace('\r', ' ').replace('\n', ' ')[:600]
+                if provider_detail not in router_error:
+                    router_error = f"{router_error} | {provider_detail}"
+            print(f"[LLM建议] 调用失败: {router_error}")
             return {
                 'success': False,
                 'source': 'fallback',
                 'suggestions': [],
                 'llm_raw': '',
                 'llm_parsed': False,
+                'model': result.get('model', ''),
+                'error': router_error,
             }
 
         raw_content = result.get('content', '').strip()
+        llm_source = _resolve_source_by_model(result.get('model', ''))
 
         # 尝试解析 JSON
         suggestions = _parse_llm_suggestions(raw_content)
 
         if suggestions:
+            if biz_module == 'rule' and len(suggestions) < 6:
+                suggestions.extend(_build_rule_data_driven_suggestions(analysis_data))
             print(f"[LLM建议] 解析成功，共 {len(suggestions)} 条建议")
             return {
                 'success': True,
-                'source': 'llm',
+                'source': llm_source,
                 'suggestions': suggestions,
                 'llm_raw': raw_content,
                 'llm_parsed': True,
+                'model': result.get('model', ''),
             }
         else:
             # JSON 解析失败，但有文本内容，尝试提取结构化建议
             print(f"[LLM建议] JSON 解析失败，尝试文本提取")
             text_suggestions = _extract_suggestions_from_text(raw_content)
             if text_suggestions:
+                if biz_module == 'rule' and len(text_suggestions) < 6:
+                    text_suggestions.extend(_build_rule_data_driven_suggestions(analysis_data))
                 return {
                     'success': True,
-                    'source': 'llm',
+                    'source': llm_source,
                     'suggestions': text_suggestions,
                     'llm_raw': raw_content,
                     'llm_parsed': False,
+                    'model': result.get('model', ''),
+                }
+            # 文本提取失败时，至少将 LLM 原文兜底为可展示建议，避免前端误判为规则引擎
+            raw_suggestions = _build_suggestions_from_raw_text(raw_content)
+            if raw_suggestions:
+                if biz_module == 'rule' and len(raw_suggestions) < 6:
+                    raw_suggestions.extend(_build_rule_data_driven_suggestions(analysis_data))
+                return {
+                    'success': True,
+                    'source': llm_source,
+                    'suggestions': raw_suggestions,
+                    'llm_raw': raw_content,
+                    'llm_parsed': False,
+                    'model': result.get('model', ''),
                 }
             return {
                 'success': False,
@@ -170,6 +314,8 @@ def generate_llm_dynamic_suggestion(
                 'suggestions': [],
                 'llm_raw': raw_content,
                 'llm_parsed': False,
+                'model': result.get('model', ''),
+                'error': f"llm_parse_empty: {(raw_content or '').replace(chr(10), ' ')[:240]}",
             }
 
     except Exception as e:
@@ -182,6 +328,8 @@ def generate_llm_dynamic_suggestion(
             'suggestions': [],
             'llm_raw': str(e),
             'llm_parsed': False,
+            'model': '',
+            'error': str(e),
         }
 
 
@@ -487,6 +635,50 @@ def _extract_suggestions_from_text(text: str) -> List[Dict]:
     # 去重
     suggestions = _deduplicate_suggestions(suggestions)
     return suggestions[:10]  # 最多 10 条
+
+
+def _build_suggestions_from_raw_text(text: str) -> List[Dict]:
+    """
+    当 JSON/结构化提取都失败时，将 LLM 原始文本转为可展示建议。
+    该函数不生成规则引擎建议，只做文本结构化，保证来源仍是 LLM。
+    """
+    import re
+
+    raw = (text or '').strip()
+    if not raw:
+        return []
+
+    compact = re.sub(r'\s+', ' ', raw).strip()
+    if not compact:
+        return []
+
+    # 按句子切分，提取前若干条有信息密度的句子
+    parts = re.split(r'[。\n；;！？!?]+', compact)
+    suggestions: List[Dict] = []
+    for part in parts:
+        sentence = part.strip(' -•\t')
+        if len(sentence) < 14:
+            continue
+        title = sentence[:24] + ('...' if len(sentence) > 24 else '')
+        content = sentence[:260] + ('...' if len(sentence) > 260 else '')
+        suggestions.append({
+            'type': 'info',
+            'title': title or '策略建议',
+            'content': content,
+            'details': 'LLM返回文本自动结构化',
+        })
+        if len(suggestions) >= 8:
+            break
+
+    if not suggestions:
+        suggestions = [{
+            'type': 'info',
+            'title': '策略建议',
+            'content': compact[:260] + ('...' if len(compact) > 260 else ''),
+            'details': 'LLM返回文本自动结构化',
+        }]
+
+    return _deduplicate_suggestions(suggestions)[:10]
 
 
 def _deduplicate_suggestions(suggestions: List[Dict]) -> List[Dict]:

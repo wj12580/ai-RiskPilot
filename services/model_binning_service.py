@@ -11,16 +11,42 @@ import base64
 import warnings
 import numpy as np
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.tree import DecisionTreeClassifier, plot_tree
 
 warnings.filterwarnings('ignore')
 
 # 中文字体
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'WenQuanYi Micro Hei']
 plt.rcParams['axes.unicode_minus'] = False
+
+
+def _analyze_single_model(
+    df: pd.DataFrame,
+    model_col: str,
+    label_col: str,
+    n_bins: int,
+    threshold: float,
+) -> dict:
+    """单模型分箱任务（供并发调用）。"""
+    try:
+        binning_df, auc, ks, sort_desc = equal_freq_binning(
+            df, model_col, label_col, n_bins, threshold
+        )
+        return {
+            'ok': True,
+            'model_name': model_col,
+            'binning_df': binning_df,
+            'auc': auc,
+            'ks': ks,
+            'sort_desc': sort_desc,
+        }
+    except Exception as e:
+        return {'ok': False, 'model_name': model_col, 'error': str(e)}
 
 
 def calculate_lift(bad_rate_bin, bad_rate_overall):
@@ -101,15 +127,15 @@ def equal_freq_binning(df, score_col, label_col, n_bins=10, threshold=1.0):
     cum_good_count = 0
     max_cum_ks = 0  # 追踪最大累积KS
 
-    for bin_num in range(1, n_bins + 1):
-        bin_data = data[data['bin'] == bin_num]
+    grouped = data.groupby('bin', sort=True)
+    for bin_num, bin_data in grouped:
 
         if len(bin_data) == 0:
             continue
 
         # 基础统计
-        n_samples = len(bin_data)
-        n_bad = bin_data[label_col].sum()
+        n_samples = int(len(bin_data))
+        n_bad = float(bin_data[label_col].sum())
         n_good = n_samples - n_bad
 
         # 分数范围
@@ -176,32 +202,55 @@ def analyze_all_models(df, label_col='label', n_bins=10, threshold=1.0):
     all_results = []
     model_summary = []
 
-    for model_col in model_cols:
-        try:
-            # 执行分箱
-            binning_df, auc, ks, sort_desc = equal_freq_binning(
-                df, model_col, label_col, n_bins, threshold
-            )
+    if not model_cols:
+        return all_results, pd.DataFrame()
 
-            # 保存结果
-            all_results.append({
-                'model_name': model_col,
-                'binning_df': binning_df,
-                'auc': auc,
-                'ks': ks,
-                'sort_desc': sort_desc
-            })
+    # 并发执行单模型分箱（对外输出结构不变）
+    max_workers = min(8, len(model_cols))
+    if max_workers <= 1:
+        task_results = [
+            _analyze_single_model(df, model_col, label_col, n_bins, threshold)
+            for model_col in model_cols
+        ]
+    else:
+        task_results = []
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    _analyze_single_model, df, model_col, label_col, n_bins, threshold
+                ): model_col
+                for model_col in model_cols
+            }
+            for future in as_completed(futures):
+                model_col = futures[future]
+                try:
+                    task_results.append(future.result())
+                except Exception as e:
+                    task_results.append({'ok': False, 'model_name': model_col, 'error': str(e)})
 
-            model_summary.append({
-                '模型名称': model_col,
-                'AUC': round(auc, 4),
-                'KS': round(ks, 4),
-                '排序方式': sort_desc
-            })
+    # 恢复为原列顺序，保持结果稳定
+    task_by_model = {item.get('model_name', ''): item for item in task_results}
+    ordered_results = [task_by_model.get(model_col) for model_col in model_cols if task_by_model.get(model_col)]
 
-        except Exception as e:
-            print(f"  [错误] {model_col} 分析失败: {str(e)}")
+    for item in ordered_results:
+        if not item.get('ok'):
+            print(f"  [错误] {item.get('model_name', 'unknown')} 分析失败: {item.get('error', 'unknown')}")
             continue
+
+        all_results.append({
+            'model_name': item['model_name'],
+            'binning_df': item['binning_df'],
+            'auc': item['auc'],
+            'ks': item['ks'],
+            'sort_desc': item['sort_desc']
+        })
+
+        model_summary.append({
+            '模型名称': item['model_name'],
+            'AUC': round(item['auc'], 4),
+            'KS': round(item['ks'], 4),
+            '排序方式': item['sort_desc']
+        })
 
     # 模型排名
     summary_df = pd.DataFrame(model_summary)
@@ -216,7 +265,7 @@ def analyze_all_models(df, label_col='label', n_bins=10, threshold=1.0):
 def _fig_to_b64(fig) -> str:
     """将图表转换为 base64"""
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=150, bbox_inches='tight',
+    fig.savefig(buf, format='png', dpi=120, bbox_inches='tight',
                 facecolor='white', edgecolor='none')
     buf.seek(0)
     img_b64 = base64.b64encode(buf.read()).decode('utf-8')
@@ -360,6 +409,63 @@ def plot_all_models_badrate(all_binning_results: list, top_n: int = 6) -> str:
     return _fig_to_b64(fig)
 
 
+def build_model_decision_tree(df: pd.DataFrame, label_col: str, score_cols: list) -> dict:
+    """构建模型分决策树（深度<=3，叶子样本>=10）并输出图像与叶子摘要"""
+    if label_col not in df.columns or not score_cols:
+        return {'image': '', 'leaf_nodes': []}
+
+    selected = [col for col in score_cols[:6] if col in df.columns]
+    if not selected:
+        return {'image': '', 'leaf_nodes': []}
+
+    data = df[selected + [label_col]].copy()
+    for col in selected:
+        data[col] = pd.to_numeric(data[col], errors='coerce')
+        if data[col].notna().any():
+            data[col] = data[col].fillna(data[col].median())
+        else:
+            data[col] = data[col].fillna(0)
+    data[label_col] = pd.to_numeric(data[label_col], errors='coerce').fillna(0).astype(int)
+    data = data.dropna(subset=selected)
+    if len(data) < 30:
+        return {'image': '', 'leaf_nodes': []}
+
+    x = data[selected]
+    y = data[label_col]
+
+    try:
+        clf = DecisionTreeClassifier(max_depth=3, min_samples_leaf=10, random_state=42)
+        clf.fit(x, y)
+
+        fig, ax = plt.subplots(figsize=(max(10, len(selected) * 1.8), 6))
+        plot_tree(
+            clf, feature_names=selected, class_names=['good', 'bad'],
+            filled=True, rounded=True, fontsize=7, impurity=False, ax=ax
+        )
+        ax.set_title('模型分决策树（深度<=3）', fontsize=12)
+        tree_image = _fig_to_b64(fig)
+
+        leaf_id = clf.apply(x)
+        leaf_nodes = []
+        for lid in sorted(pd.Series(leaf_id).unique()):
+            mask = leaf_id == lid
+            sample_count = int(mask.sum())
+            if sample_count < 10:
+                continue
+            bad_count = int(y[mask].sum())
+            bad_rate = float(bad_count / sample_count) if sample_count else 0.0
+            leaf_nodes.append({
+                'leaf_id': int(lid),
+                'sample_count': sample_count,
+                'bad_count': bad_count,
+                'bad_rate': bad_rate,
+            })
+        leaf_nodes.sort(key=lambda item: item['bad_rate'], reverse=True)
+        return {'image': tree_image, 'leaf_nodes': leaf_nodes[:12], 'features': selected}
+    except Exception:
+        return {'image': '', 'leaf_nodes': []}
+
+
 def run_model_binning_analysis(df: pd.DataFrame, 
                                label_col: str = 'label',
                                n_bins: int = 10,
@@ -395,15 +501,7 @@ def run_model_binning_analysis(df: pd.DataFrame,
     charts['01_模型排名'] = plot_model_summary(summary_df)
     charts['02_逾期率对比'] = plot_all_models_badrate(all_results, top_n=min(6, len(all_results)))
     
-    # 每个模型的详情图
-    for i, result in enumerate(all_results[:6]):  # 最多6个
-        charts[f'03_{result["model_name"]}_分箱详情'] = plot_binning_detail(
-            result['binning_df'],
-            result['model_name'],
-            result['auc'],
-            result['ks'],
-            result['sort_desc']
-        )
+    # 每个模型的详情图（当前iframe报告未使用，跳过生成以提升速度）
     
     # 生成表格HTML
     model_summary_html = summary_df[['排名', '模型名称', 'AUC', 'KS', '综合得分', '排序方式']].to_html(
@@ -436,6 +534,12 @@ def run_model_binning_analysis(df: pd.DataFrame,
         detail_df = pd.concat([info_row, binning_df], ignore_index=True)
         binning_details[model_name] = detail_df.to_html(index=False, border=0, classes='data-table')
     
+    decision_tree = build_model_decision_tree(
+        df=df,
+        label_col=label_col,
+        score_cols=[r['model_name'] for r in all_results]
+    )
+
     return {
         'data_summary': {
             'total_samples': total_samples,
@@ -459,112 +563,133 @@ def run_model_binning_analysis(df: pd.DataFrame,
         'charts': charts,
         'model_summary_table': model_summary_html,
         'binning_details': binning_details,
+        'decision_tree': decision_tree,
         'top_models': summary_df.head(5)['模型名称'].tolist() if len(summary_df) > 0 else [],
     }
 
 
-def generate_binning_html_report(analysis_result: dict, 
+def generate_binning_html_report(analysis_result: dict,
                                  analysis_date: str = '') -> str:
-    """生成模型分箱分析HTML报告"""
+    """Generate enhanced model report HTML (binning + decision tree)."""
     data_summary = analysis_result.get('data_summary', {})
     charts = analysis_result.get('charts', {})
     model_summary_table = analysis_result.get('model_summary_table', '')
-    binning_details = analysis_result.get('binning_details', {})
-    
-    def img_tag(name, caption, grid_class='single'):
+    all_results = analysis_result.get('all_results', []) or []
+    decision_tree = analysis_result.get('decision_tree', {}) or {}
+
+    def parse_pct(v):
+        if isinstance(v, str):
+            try:
+                return float(v.replace('%', '').strip())
+            except Exception:
+                return 0.0
+        try:
+            return float(v)
+        except Exception:
+            return 0.0
+
+    def pick(row, keys, default=''):
+        for key in keys:
+            if key in row:
+                return row.get(key, default)
+        return default
+
+    def pick_by_index(row, index, default=''):
+        keys = list(row.keys())
+        if 0 <= index < len(keys):
+            return row.get(keys[index], default)
+        return default
+
+    def img_tag(name, caption):
         data = charts.get(name, '')
         if not data:
             return ''
-        return f'''
-  <div class="img-grid {grid_class}">
-    <div class="img-box">
-      <img src="data:image/png;base64,{data}" alt="{name}">
-      <div class="caption">{caption}</div>
-    </div>
-  </div>'''
-    
-    # 生成各模型详情HTML
-    model_detail_sections = ''
-    for model_name, detail_html in binning_details.items():
-        model_detail_sections += f'''
-<!-- {model_name} 分箱详情 -->
-<div class="section">
-  <h2>📊 {model_name} 分箱详情</h2>
-  {detail_html}
-</div>'''
-    
-    html = f'''<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>模型分箱分析报告</title>
+        return (
+            f'<div class="img-box"><img src="data:image/png;base64,{data}" alt="{name}">'
+            f'<div class="caption">{caption}</div></div>'
+        )
+
+    model_sections = []
+    strategy_points = []
+    for model_item in all_results:
+        model_name = model_item.get('model_name', 'unknown_model')
+        auc = float(model_item.get('auc', 0) or 0)
+        ks = float(model_item.get('ks', 0) or 0)
+        sort_desc = str(model_item.get('sort_desc', '') or '')
+        rows = model_item.get('binning_df', []) or []
+
+        bad_rate_values = [parse_pct(pick(row, ['bad_rate'], pick_by_index(row, 8, '0%'))) for row in rows]
+        max_bad_rate = max(bad_rate_values) if bad_rate_values else 1.0
+
+        table_rows = ''
+        for row in rows:
+            bin_no = pick(row, ['bin'], pick_by_index(row, 0, '--'))
+            score_min = pick(row, ['score_min'], pick_by_index(row, 1, '--'))
+            score_max = pick(row, ['score_max'], pick_by_index(row, 2, '--'))
+            sample_cnt = int(float(pick(row, ['sample_count'], pick_by_index(row, 3, 0)) or 0))
+            bad_cnt = int(float(pick(row, ['bad_count'], pick_by_index(row, 4, 0)) or 0))
+            bad_rate_text = str(pick(row, ['bad_rate'], pick_by_index(row, 8, '0%')))
+            cum_bad_rate_text = str(pick(row, ['cum_bad_rate'], pick_by_index(row, 7, '0%')))
+            lift = pick(row, ['Lift', 'lift'], pick_by_index(row, 9, 0))
+            cum_ks = pick(row, ['cum_ks'], pick_by_index(row, 10, 0))
+            bad_rate_num = parse_pct(bad_rate_text)
+            bar_width = 0 if max_bad_rate <= 0 else min(100, bad_rate_num / max_bad_rate * 100)
+            table_rows += (
+                f'<tr><td>{bin_no}</td><td>{score_min}</td><td>{score_max}</td><td>{sample_cnt:,}</td><td>{bad_cnt:,}</td>'
+                f'<td><span class="rate-bar-track"><span class="rate-bar-fill" style="width:{bar_width:.1f}%"></span></span>{bad_rate_text}</td>'
+                f'<td>{cum_bad_rate_text}</td><td>{lift}</td><td>{cum_ks}</td></tr>'
+            )
+
+        model_sections.append(
+            f'<div class="section"><h2>📌 {model_name} Binning Detail</h2>'
+            f'<div class="meta-line">AUC: <b>{auc:.4f}</b> | KS: <b>{ks:.4f}</b> | Sort Rule: <b>{sort_desc}</b></div>'
+            '<table class="data-table"><thead><tr><th>Bin</th><th>Score Min</th><th>Score Max</th><th>Samples</th><th>Bad Samples</th><th>Bad Rate</th><th>Cum Bad Rate</th><th>Lift</th><th>Cum KS</th></tr></thead>'
+            f'<tbody>{table_rows}</tbody></table></div>'
+        )
+
+        if ks >= 0.25:
+            strategy_points.append(f'{model_name}: KS={ks:.3f}, strong discrimination; suitable for core segmentation.')
+        elif ks >= 0.18:
+            strategy_points.append(f'{model_name}: KS={ks:.3f}, usable discrimination; combine with rules for decisions.')
+        else:
+            strategy_points.append(f'{model_name}: KS={ks:.3f}, weak discrimination; use as secondary ranking feature.')
+
+    tree_image = decision_tree.get('image', '')
+    leaf_nodes = decision_tree.get('leaf_nodes', []) or []
+    leaf_rows = ''.join(
+        f"<tr><td>{leaf.get('leaf_id', '--')}</td><td>{leaf.get('sample_count', 0):,}</td><td>{leaf.get('bad_count', 0):,}</td><td>{leaf.get('bad_rate', 0) * 100:.2f}%</td></tr>"
+        for leaf in leaf_nodes
+    )
+    tree_image_html = f'<img src="data:image/png;base64,{tree_image}" class="tree-image" alt="model decision tree">' if tree_image else '<p>No decision tree image available.</p>'
+
+    total_samples = int(data_summary.get('total_samples', 0) or 0)
+    total_bad = int(data_summary.get('total_bad', 0) or 0)
+    overall_bad_rate = data_summary.get('overall_bad_rate_str') or data_summary.get('overall_bad_rate', 'N/A')
+    n_models = int(data_summary.get('n_models', 0) or 0)
+    n_bins = int(data_summary.get('n_bins', 0) or 0)
+
+    html = f"""<!DOCTYPE html>
+<html lang='zh-CN'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>Model Analysis Report</title>
 <style>
-  *{{box-sizing:border-box;margin:0;padding:0}}
-  body{{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f0f4f8;color:#1a202c}}
-  .header{{background:linear-gradient(135deg,#1e3a5f 0%,#2563eb 100%);color:white;padding:36px 40px}}
-  .header h1{{font-size:26px;font-weight:700;margin-bottom:8px}}
-  .header p{{font-size:14px;opacity:0.85}}
-  .container{{max-width:1300px;margin:0 auto;padding:32px 24px}}
-  .kpi-grid{{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:32px}}
-  .kpi{{background:white;border-radius:12px;padding:20px 16px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.06)}}
-  .kpi .val{{font-size:28px;font-weight:700;color:#2563eb}}
-  .kpi .lbl{{font-size:12px;color:#64748b;margin-top:4px}}
-  .section{{background:white;border-radius:14px;padding:28px 28px 20px;box-shadow:0 2px 10px rgba(0,0,0,.06);margin-bottom:28px}}
-  .section h2{{font-size:18px;font-weight:700;color:#1e3a5f;margin-bottom:6px;padding-bottom:10px;border-bottom:2px solid #e2e8f0}}
-  .section p,.section li{{font-size:14px;color:#475569;line-height:1.8}}
-  .section ul{{padding-left:20px;margin-top:8px}}
-  .img-grid{{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:16px}}
-  .img-grid.single{{grid-template-columns:1fr}}
-  .img-box{{border-radius:10px;overflow:hidden;box-shadow:0 2px 6px rgba(0,0,0,.08)}}
-  .img-box img{{width:100%;display:block}}
-  .img-box .caption{{background:#f8fafc;padding:8px 12px;font-size:12px;color:#64748b;text-align:center}}
-  .data-table{{width:100%;border-collapse:collapse;font-size:13px;margin-top:12px}}
-  .data-table th{{background:#1e3a5f;color:white;padding:10px 12px;text-align:left}}
-  .data-table td{{padding:8px 12px;border-bottom:1px solid #e2e8f0}}
-  .data-table tr:nth-child(even){{background:#f8fafc}}
-  footer{{text-align:center;padding:24px;color:#94a3b8;font-size:12px}}
-</style>
-</head>
-<body>
-<div class="header">
-  <h1>📊 模型分箱分析报告</h1>
-  <p>样本量：{data_summary.get('total_samples', 0):,} &nbsp;|&nbsp; 整体逾期率：{data_summary.get('overall_bad_rate', 'N/A')} &nbsp;|&nbsp; 模型数量：{data_summary.get('n_models', 0)} 个 &nbsp;|&nbsp; 分箱数：{data_summary.get('n_bins', 10)} &nbsp;|&nbsp; 分析日期：{analysis_date}</p>
-</div>
-
-<div class="container">
-
-<!-- KPI -->
-<div class="kpi-grid">
-  <div class="kpi"><div class="val">{data_summary.get('total_samples', 0):,}</div><div class="lbl">总样本量</div></div>
-  <div class="kpi"><div class="val">{data_summary.get('total_bad', 0):,}</div><div class="lbl">坏样本数</div></div>
-  <div class="kpi"><div class="val">{data_summary.get('overall_bad_rate', 'N/A')}</div><div class="lbl">整体逾期率</div></div>
-  <div class="kpi"><div class="val">{data_summary.get('n_models', 0)}</div><div class="lbl">分析模型数</div></div>
-  <div class="kpi"><div class="val">{data_summary.get('n_bins', 10)}</div><div class="lbl">分箱数</div></div>
-</div>
-
-<!-- 模型汇总 -->
-<div class="section">
-  <h2>🏆 模型综合排名</h2>
-  {model_summary_table}
-</div>
-
-<!-- 排名图表 -->
-<div class="section">
-  <h2>📈 模型性能对比图</h2>
-  {img_tag('01_模型排名', '左：AUC排名 | 右：KS排名 | 颜色越绿性能越好')}
-</div>
-
-<!-- 逾期率对比 -->
-<div class="section">
-  <h2>📉 Top 6 模型分箱逾期率对比</h2>
-  {img_tag('02_逾期率对比', '各箱逾期率对比，颜色越红风险越高')}
-</div>
-
-{model_detail_sections}
-
-</div>
-<footer>模型分箱分析报告 · 生成于 {analysis_date} · RiskPilot</footer>
-</body>
-</html>'''
+*{{box-sizing:border-box;margin:0;padding:0}} body{{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#f5f7fb;color:#1f2937}}
+.header{{background:linear-gradient(135deg,#1e3a8a,#2563eb);color:#fff;padding:32px 40px}} .header h1{{font-size:28px;margin-bottom:8px}} .header p{{font-size:14px;opacity:.92}}
+.container{{max-width:1320px;margin:0 auto;padding:24px 20px 36px}} .kpi-grid{{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px}}
+.kpi{{background:#fff;border-radius:12px;padding:18px;text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.06)}} .kpi .val{{font-size:24px;font-weight:700;color:#1d4ed8}} .kpi .lbl{{font-size:12px;color:#64748b;margin-top:6px}}
+.section{{background:#fff;border-radius:12px;padding:20px 22px;margin-bottom:18px;box-shadow:0 2px 10px rgba(0,0,0,.06)}} .section h2{{font-size:18px;color:#0f172a;margin-bottom:10px;padding-bottom:8px;border-bottom:2px solid #e2e8f0}}
+.section p,.section li{{line-height:1.8;font-size:14px;color:#475569}} .section ul{{padding-left:20px;margin-top:6px}}
+.img-grid{{display:grid;grid-template-columns:1fr 1fr;gap:14px}} .img-box{{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}} .img-box img{{width:100%;display:block}} .caption{{padding:8px 10px;font-size:12px;color:#64748b}}
+.meta-line{{font-size:13px;color:#334155;margin-bottom:10px}} .data-table{{width:100%;border-collapse:collapse;font-size:13px}} .data-table th{{background:#eff6ff;color:#1e3a8a;padding:9px 10px;text-align:left}} .data-table td{{padding:8px 10px;border-bottom:1px solid #e5e7eb}} .data-table tr:nth-child(even){{background:#f8fafc}}
+.rate-bar-track{{width:136px;height:10px;border-radius:999px;background:#e5e7eb;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:8px}} .rate-bar-fill{{height:100%;background:linear-gradient(90deg,#f59e0b,#dc2626);display:block}}
+.tree-image-wrap{{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px;margin-bottom:10px}} .tree-image{{width:100%;height:auto;display:block}} footer{{text-align:center;color:#94a3b8;font-size:12px;padding-top:8px}}
+</style></head><body>
+<div class='header'><h1>📊 Model Analysis Report (Binning + Decision Tree)</h1><p>Date: {analysis_date} | Samples: {total_samples:,} | Overall Bad Rate: {overall_bad_rate}</p></div>
+<div class='container'>
+<div class='kpi-grid'><div class='kpi'><div class='val'>{total_samples:,}</div><div class='lbl'>Total Samples</div></div><div class='kpi'><div class='val'>{total_bad:,}</div><div class='lbl'>Bad Samples</div></div><div class='kpi'><div class='val'>{overall_bad_rate}</div><div class='lbl'>Overall Bad Rate</div></div><div class='kpi'><div class='val'>{n_models}</div><div class='lbl'>Models</div></div><div class='kpi'><div class='val'>{n_bins}</div><div class='lbl'>Bins</div></div></div>
+<div class='section'><h2>🌲 Decision Tree Analysis</h2><p>Tree depth is capped at 3 and minimum leaf sample is 10 for stable segmentation.</p><div class='tree-image-wrap'>{tree_image_html}</div><table class='data-table'><thead><tr><th>Leaf Node</th><th>Samples</th><th>Bad Samples</th><th>Bad Rate</th></tr></thead><tbody>{leaf_rows or '<tr><td colspan="4">No leaf-node details.</td></tr>'}</tbody></table></div>
+{''.join(model_sections)}
+<div class='section'><h2>🏆 Model Summary</h2>{model_summary_table}</div>
+<div class='section'><h2>📈 Performance Charts</h2><div class='img-grid'>{img_tag('01_模型排名', 'AUC/KS ranking comparison')}{img_tag('02_逾期率对比', 'Top-6 model bad-rate by bins')}</div></div>
+<div class='section'><h2>🧭 Strategy Recommendations</h2><ul>{''.join(f'<li>{p}</li>' for p in strategy_points[:8])}<li>For high-bad-rate bins, apply joint controls: lower limit + manual review + anti-fraud checks.</li><li>Use cumulative bad-rate inflection bins as approval threshold candidates and monitor migration weekly.</li><li>Sorting rule is explicit: max score > 1 uses descending; max score ≤ 1 uses ascending.</li></ul></div>
+</div><footer>RiskPilot · Model Analysis Report</footer></body></html>"""
     return html
+
